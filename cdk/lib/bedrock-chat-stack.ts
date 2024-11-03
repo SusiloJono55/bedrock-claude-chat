@@ -22,6 +22,7 @@ import { WebAclForPublishedApi } from "./constructs/webacl-for-published-api";
 import * as s3deploy from "aws-cdk-lib/aws-s3-deployment";
 import * as path from "path";
 import { BedrockCustomBotCodebuild } from "./constructs/bedrock-custom-bot-codebuild";
+import { FE } from "./constructs/fe";
 
 export interface BedrockChatStackProps extends StackProps {
   readonly bedrockRegion: string;
@@ -122,6 +123,13 @@ export class BedrockChatStack extends cdk.Stack {
       enableIpV6: props.enableIpV6,
     });
 
+    const fe = new FE(this, "FE", {
+      accessLogBucket,
+      webAclId: props.webAclId,
+      enableMistral: props.enableMistral,
+      enableIpV6: props.enableIpV6,
+    });
+
     const auth = new Auth(this, "Auth", {
       origin: frontend.getOrigin(),
       userPoolDomainPrefixKey: props.userPoolDomainPrefix,
@@ -130,6 +138,16 @@ export class BedrockChatStack extends cdk.Stack {
       autoJoinUserGroups: props.autoJoinUserGroups,
       selfSignUpEnabled: props.selfSignUpEnabled,
     });
+
+    const authfe = new Auth(this, "AuthFE", {
+      origin: fe.getOrigin(),
+      userPoolDomainPrefixKey: props.userPoolDomainPrefix,
+      idp,
+      allowedSignUpEmailDomains: props.allowedSignUpEmailDomains,
+      autoJoinUserGroups: props.autoJoinUserGroups,
+      selfSignUpEnabled: props.selfSignUpEnabled,
+    });
+    
     const largeMessageBucket = new Bucket(this, "LargeMessageBucket", {
       encryption: BucketEncryption.S3_MANAGED,
       blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
@@ -186,11 +204,25 @@ export class BedrockChatStack extends cdk.Stack {
       idp,
     });
 
+    fe.buildViteApp({
+      backendApiEndpoint: backendApi.api.apiEndpoint,
+      webSocketApiEndpoint: websocket.apiEndpoint,
+      userPoolDomainPrefix: props.userPoolDomainPrefix,
+      enableMistral: props.enableMistral,
+      authfe,
+      idp,
+    });
+
     const cloudFrontWebDistribution = frontend.cloudFrontWebDistribution.node
       .defaultChild as CloudFrontWebDistribution;
+
+    const cloudFrontWebDistributionFE = fe.cloudFrontWebDistribution.node
+      .defaultChild as CloudFrontWebDistribution;
+
     props.documentBucket.addCorsRule({
       allowedMethods: [HttpMethods.PUT],
       allowedOrigins: [
+        `https://${cloudFrontWebDistributionFE.distributionDomainName}`,
         `https://${cloudFrontWebDistribution.distributionDomainName}`, // frontend.getOrigin() is cyclic reference
         "http://localhost:5173",
         "*",
@@ -223,6 +255,9 @@ export class BedrockChatStack extends cdk.Stack {
     });
     new CfnOutput(this, "FrontendURL", {
       value: frontend.getOrigin(),
+    });
+    new CfnOutput(this, "FEURL", {
+      value: fe.getOrigin(),
     });
 
     // Outputs for API publication
