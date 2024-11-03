@@ -93,7 +93,7 @@ export class Auth extends Construct {
 
     const client = userPool.addClient(`Client`, clientProps);
 
-    const clientFE = userPool.addClient(`Client`, clientPropsFE);
+    const clientFE = userPool.addClient(`ClientFE`, clientPropsFE);
 
     const configureProvider = (
       provider: TIdentityProvider,
