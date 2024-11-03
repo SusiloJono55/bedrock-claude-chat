@@ -222,7 +222,6 @@ export class BedrockChatStack extends cdk.Stack {
     props.documentBucket.addCorsRule({
       allowedMethods: [HttpMethods.PUT],
       allowedOrigins: [
-        `https://${cloudFrontWebDistributionFE.distributionDomainName}`,
         `https://${cloudFrontWebDistribution.distributionDomainName}`, // frontend.getOrigin() is cyclic reference
         "http://localhost:5173",
         "*",
