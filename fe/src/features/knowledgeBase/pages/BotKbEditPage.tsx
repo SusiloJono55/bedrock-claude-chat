@@ -32,12 +32,10 @@ import { useAgent } from '../../../features/agent/hooks/useAgent';
 import { AgentTool } from '../../../features/agent/types';
 import { AvailableTools } from '../../../features/agent/components/AvailableTools';
 import {
-  DEFAULT_FIXED_CHUNK_PARAMS,
-  DEFAULT_HIERARCHICAL_CHUNK_PARAMS,
-  DEFAULT_SEMANTIC_CHUNK_PARAMS,
-  EDGE_FIXED_CHUNK_PARAMS,
-  EDGE_HIERARCHICAL_CHUNK_PARAMS,
-  EDGE_SEMANTIC_CHUNK_PARAMS,
+  DEFAULT_CHUNKING_MAX_TOKENS,
+  DEFAULT_CHUNKING_OVERLAP_PERCENTAGE,
+  EDGE_CHUNKING_MAX_TOKENS,
+  EDGE_CHUNKING_OVERLAP_PERCENTAGE,
   EDGE_SEARCH_PARAMS,
   OPENSEARCH_ANALYZER,
   DEFAULT_SEARCH_CONFIG,
@@ -49,9 +47,6 @@ import {
 } from '../../../constants';
 import {
   ChunkingStrategy,
-  FixedSizeParams,
-  HierarchicalParams,
-  SemanticParams,
   EmbeddingsModel,
   OpenSearchParams,
   SearchParams,
@@ -126,17 +121,17 @@ const BotKbEditPage: React.FC = () => {
     label: string;
     value: EmbeddingsModel;
   }[] = [
-      {
-        label: t('knowledgeBaseSettings.embeddingModel.titan_v2.label'),
-        value: 'titan_v2',
-      },
-      {
-        label: t(
-          'knowledgeBaseSettings.embeddingModel.cohere_multilingual_v3.label'
-        ),
-        value: 'cohere_multilingual_v3',
-      },
-    ];
+    {
+      label: t('knowledgeBaseSettings.embeddingModel.titan_v2.label'),
+      value: 'titan_v2',
+    },
+    {
+      label: t(
+        'knowledgeBaseSettings.embeddingModel.cohere_multilingual_v3.label'
+      ),
+      value: 'cohere_multilingual_v3',
+    },
+  ];
 
   const [chunkingStrategy, setChunkingStrategy] =
     useState<ChunkingStrategy>('default');
@@ -146,44 +141,29 @@ const BotKbEditPage: React.FC = () => {
     value: ChunkingStrategy;
     description: string;
   }[] = [
-      {
-        label: t('knowledgeBaseSettings.chunkingStrategy.default.label'),
-        value: 'default',
-        description: t('knowledgeBaseSettings.chunkingStrategy.default.hint'),
-      },
-      {
-        label: t('knowledgeBaseSettings.chunkingStrategy.fixed_size.label'),
-        value: 'fixed_size',
-        description: t('knowledgeBaseSettings.chunkingStrategy.fixed_size.hint'),
-      },
-      {
-        label: t('knowledgeBaseSettings.chunkingStrategy.hierarchical.label'),
-        value: 'hierarchical',
-        description: t('knowledgeBaseSettings.chunkingStrategy.hierarchical.hint'),
-      },
-      {
-        label: t('knowledgeBaseSettings.chunkingStrategy.semantic.label'),
-        value: 'semantic',
-        description: t('knowledgeBaseSettings.chunkingStrategy.semantic.hint'),
-      },
-      {
-        label: t('knowledgeBaseSettings.chunkingStrategy.none.label'),
-        value: 'none',
-        description: t('knowledgeBaseSettings.chunkingStrategy.none.hint'),
-      },
-    ];
+    {
+      label: t('knowledgeBaseSettings.chunkingStrategy.default.label'),
+      value: 'default',
+      description: t('knowledgeBaseSettings.chunkingStrategy.default.hint'),
+    },
+    {
+      label: t('knowledgeBaseSettings.chunkingStrategy.fixed_size.label'),
+      value: 'fixed_size',
+      description: t('knowledgeBaseSettings.chunkingStrategy.fixed_size.hint'),
+    },
+    {
+      label: t('knowledgeBaseSettings.chunkingStrategy.none.label'),
+      value: 'none',
+      description: t('knowledgeBaseSettings.chunkingStrategy.none.hint'),
+    },
+  ];
 
-  const [fixedSizeParams, setFixedSizeParams] = useState<FixedSizeParams>(
-    DEFAULT_FIXED_CHUNK_PARAMS
+  const [chunkingMaxTokens, setChunkingMaxTokens] = useState<number>(
+    DEFAULT_CHUNKING_MAX_TOKENS
   );
 
-  const [hierarchicalParams, setHierarchicalParams] = useState<HierarchicalParams>(
-    DEFAULT_HIERARCHICAL_CHUNK_PARAMS
-  );
-
-  const [semanticParams, setSemanticParams] = useState<SemanticParams>(
-    DEFAULT_SEMANTIC_CHUNK_PARAMS
-  );
+  const [chunkingOverlapPercentage, setChunkingOverlapPercentage] =
+    useState<number>(DEFAULT_CHUNKING_OVERLAP_PERCENTAGE);
 
   const [analyzer, setAnalyzer] = useState<string>(
     DEFAULT_OPENSEARCH_ANALYZER[i18n.language] ?? 'none'
@@ -200,28 +180,28 @@ const BotKbEditPage: React.FC = () => {
     value: string;
     description: string;
   }[] = [
-      {
-        label: t('knowledgeBaseSettings.opensearchAnalyzer.icu.label'),
-        value: 'icu',
-        description: t('knowledgeBaseSettings.opensearchAnalyzer.icu.hint', {
-          tokenizer: OPENSEARCH_ANALYZER['icu'].analyzer!.tokenizer,
-          normalizer: OPENSEARCH_ANALYZER['icu'].analyzer!.characterFilters,
-        }),
-      },
-      {
-        label: t('knowledgeBaseSettings.opensearchAnalyzer.kuromoji.label'),
-        value: 'kuromoji',
-        description: t('knowledgeBaseSettings.opensearchAnalyzer.kuromoji.hint', {
-          tokenizer: OPENSEARCH_ANALYZER['kuromoji'].analyzer!.tokenizer,
-          normalizer: OPENSEARCH_ANALYZER['icu'].analyzer!.characterFilters,
-        }),
-      },
-      {
-        label: t('knowledgeBaseSettings.opensearchAnalyzer.none.label'),
-        value: 'none',
-        description: t('knowledgeBaseSettings.opensearchAnalyzer.none.hint'),
-      },
-    ];
+    {
+      label: t('knowledgeBaseSettings.opensearchAnalyzer.icu.label'),
+      value: 'icu',
+      description: t('knowledgeBaseSettings.opensearchAnalyzer.icu.hint', {
+        tokenizer: OPENSEARCH_ANALYZER['icu'].analyzer!.tokenizer,
+        normalizer: OPENSEARCH_ANALYZER['icu'].analyzer!.characterFilters,
+      }),
+    },
+    {
+      label: t('knowledgeBaseSettings.opensearchAnalyzer.kuromoji.label'),
+      value: 'kuromoji',
+      description: t('knowledgeBaseSettings.opensearchAnalyzer.kuromoji.hint', {
+        tokenizer: OPENSEARCH_ANALYZER['kuromoji'].analyzer!.tokenizer,
+        normalizer: OPENSEARCH_ANALYZER['icu'].analyzer!.characterFilters,
+      }),
+    },
+    {
+      label: t('knowledgeBaseSettings.opensearchAnalyzer.none.label'),
+      value: 'none',
+      description: t('knowledgeBaseSettings.opensearchAnalyzer.none.hint'),
+    },
+  ];
 
   const [searchParams, setSearchParams] = useState<SearchParams>(
     DEFAULT_SEARCH_CONFIG
@@ -232,17 +212,17 @@ const BotKbEditPage: React.FC = () => {
     value: SearchType;
     description: string;
   }[] = [
-      {
-        label: t('searchSettings.searchType.hybrid.label'),
-        value: 'hybrid',
-        description: t('searchSettings.searchType.hybrid.hint'),
-      },
-      {
-        label: t('searchSettings.searchType.semantic.label'),
-        value: 'semantic',
-        description: t('searchSettings.searchType.semantic.hint'),
-      },
-    ];
+    {
+      label: t('searchSettings.searchType.hybrid.label'),
+      value: 'hybrid',
+      description: t('searchSettings.searchType.hybrid.hint'),
+    },
+    {
+      label: t('searchSettings.searchType.semantic.label'),
+      value: 'semantic',
+      description: t('searchSettings.searchType.semantic.hint'),
+    },
+  ];
 
   const {
     errorMessages,
@@ -300,29 +280,22 @@ const BotKbEditPage: React.FC = () => {
             bot.conversationQuickStarters.length > 0
               ? bot.conversationQuickStarters
               : [
-                {
-                  title: '',
-                  example: '',
-                },
-              ]
+                  {
+                    title: '',
+                    example: '',
+                  },
+                ]
           );
           setKnowledgeBaseId(bot.bedrockKnowledgeBase.knowledgeBaseId);
           setEmbeddingsModel(bot.bedrockKnowledgeBase!.embeddingsModel);
-          setChunkingStrategy(bot.bedrockKnowledgeBase!.chunkingConfiguration.chunkingStrategy);
-          if (bot.bedrockKnowledgeBase!.chunkingConfiguration.chunkingStrategy == 'fixed_size') {
-            setFixedSizeParams(
-              (bot.bedrockKnowledgeBase!.chunkingConfiguration) as FixedSizeParams ?? DEFAULT_FIXED_CHUNK_PARAMS
-            );
-          } else if (bot.bedrockKnowledgeBase!.chunkingConfiguration.chunkingStrategy == 'hierarchical') {
-            setHierarchicalParams(
-              (bot.bedrockKnowledgeBase!.chunkingConfiguration) as HierarchicalParams ?? DEFAULT_HIERARCHICAL_CHUNK_PARAMS
-            );
-          } else if (bot.bedrockKnowledgeBase!.chunkingConfiguration.chunkingStrategy == 'semantic') {
-            setSemanticParams(
-              (bot.bedrockKnowledgeBase!.chunkingConfiguration) as SemanticParams ?? DEFAULT_SEMANTIC_CHUNK_PARAMS
-            );
-          }
-
+          setChunkingStrategy(bot.bedrockKnowledgeBase!.chunkingStrategy);
+          setChunkingMaxTokens(
+            bot.bedrockKnowledgeBase!.maxTokens ?? DEFAULT_CHUNKING_MAX_TOKENS
+          );
+          setChunkingOverlapPercentage(
+            bot.bedrockKnowledgeBase!.overlapPercentage ??
+              DEFAULT_CHUNKING_OVERLAP_PERCENTAGE
+          );
           setOpenSearchParams(bot.bedrockKnowledgeBase!.openSearch);
           setSearchParams(bot.bedrockKnowledgeBase!.searchParams);
           setGuardrailArn(bot.bedrockGuardrails.guardrailArn);
@@ -544,21 +517,12 @@ const BotKbEditPage: React.FC = () => {
     (value: EmbeddingsModel) => {
       setEmbeddingsModel(value);
       // Update maxTokens based on the selected embeddings model
-      const maxEdgeFixed = EDGE_FIXED_CHUNK_PARAMS.maxTokens.MAX[value];
-      const maxEdgeSemantic = EDGE_SEMANTIC_CHUNK_PARAMS.maxTokens.MAX[value];
-      if (chunkingStrategy == 'fixed_size' && fixedSizeParams.maxTokens > maxEdgeFixed) {
-        setFixedSizeParams((params) => ({
-          ...params,
-          maxTokens: maxEdgeFixed,
-        }))
-      } else if (chunkingStrategy == 'semantic' && semanticParams.maxTokens > maxEdgeSemantic) {
-        setSemanticParams((params) => ({
-          ...params,
-          maxTokens: maxEdgeSemantic,
-        }))
+      const maxEdge = EDGE_CHUNKING_MAX_TOKENS.MAX[value];
+      if (chunkingMaxTokens > maxEdge) {
+        setChunkingMaxTokens(maxEdge);
       }
     },
-    [chunkingStrategy, fixedSizeParams.maxTokens, semanticParams.maxTokens]
+    [chunkingMaxTokens]
   );
 
   const onClickBack = useCallback(() => {
@@ -608,159 +572,41 @@ const BotKbEditPage: React.FC = () => {
 
     // Chunking Strategy params validation
     if (chunkingStrategy === 'fixed_size') {
-      if (fixedSizeParams.maxTokens < EDGE_FIXED_CHUNK_PARAMS.maxTokens.MIN) {
+      if (chunkingMaxTokens < EDGE_CHUNKING_MAX_TOKENS.MIN) {
         setErrorMessages(
-          'fixedSizeParams.maxTokens',
+          'chunkingMaxTokens',
           t('validation.minRange.message', {
-            size: EDGE_FIXED_CHUNK_PARAMS.maxTokens.MIN,
+            size: EDGE_CHUNKING_MAX_TOKENS.MIN,
           })
         );
         return false;
       } else if (
-        fixedSizeParams.maxTokens > EDGE_FIXED_CHUNK_PARAMS.maxTokens.MAX[embeddingsModel]
+        chunkingMaxTokens > EDGE_CHUNKING_MAX_TOKENS.MAX[embeddingsModel]
       ) {
         setErrorMessages(
-          'fixedSizeParams.maxTokens',
+          'chunkingMaxTokens',
           t('validation.maxRange.message', {
-            size: EDGE_FIXED_CHUNK_PARAMS.maxTokens.MAX[embeddingsModel],
+            size: EDGE_CHUNKING_MAX_TOKENS.MAX[embeddingsModel],
           })
         );
         return false;
       }
 
-      if (fixedSizeParams.overlapPercentage < EDGE_FIXED_CHUNK_PARAMS.overlapPercentage.MIN) {
+      if (chunkingOverlapPercentage < EDGE_CHUNKING_OVERLAP_PERCENTAGE.MIN) {
         setErrorMessages(
-          'fixedSizeParams.overlapPercentage',
+          'chunkingOverlapPercentage',
           t('validation.minRange.message', {
-            size: EDGE_FIXED_CHUNK_PARAMS.overlapPercentage.MIN,
+            size: EDGE_CHUNKING_OVERLAP_PERCENTAGE.MIN,
           })
         );
         return false;
       } else if (
-        fixedSizeParams.overlapPercentage > EDGE_FIXED_CHUNK_PARAMS.overlapPercentage.MAX
+        chunkingOverlapPercentage > EDGE_CHUNKING_OVERLAP_PERCENTAGE.MAX
       ) {
         setErrorMessages(
-          'fixedSizeParams.overlapPercentage',
+          'chunkingOverlapPercentage',
           t('validation.maxRange.message', {
-            size: EDGE_FIXED_CHUNK_PARAMS.overlapPercentage.MAX,
-          })
-        );
-        return false;
-      }
-    } else if (chunkingStrategy === 'hierarchical') {
-      if (hierarchicalParams.overlapTokens < EDGE_HIERARCHICAL_CHUNK_PARAMS.overlapTokens.MIN) {
-        setErrorMessages(
-          'hierarchicalParams.overlapTokens',
-          t('validation.minRange.message', {
-            size: EDGE_HIERARCHICAL_CHUNK_PARAMS.overlapTokens.MIN,
-          })
-        );
-        return false;
-      }
-
-      if (hierarchicalParams.maxParentTokenSize < EDGE_HIERARCHICAL_CHUNK_PARAMS.maxParentTokenSize.MIN) {
-        setErrorMessages(
-          'hierarchicalParams.maxParentTokenSize',
-          t('validation.minRange.message', {
-            size: EDGE_HIERARCHICAL_CHUNK_PARAMS.maxParentTokenSize.MIN,
-          })
-        );
-        return false;
-      } else if (
-        hierarchicalParams.maxParentTokenSize > EDGE_HIERARCHICAL_CHUNK_PARAMS.maxParentTokenSize.MAX[embeddingsModel]
-      ) {
-        setErrorMessages(
-          'hierarchicalParams.maxParentTokenSize',
-          t('validation.maxRange.message', {
-            size: EDGE_HIERARCHICAL_CHUNK_PARAMS.maxParentTokenSize.MAX[embeddingsModel],
-          })
-        );
-        return false;
-      }
-
-      if (hierarchicalParams.maxChildTokenSize < EDGE_HIERARCHICAL_CHUNK_PARAMS.maxChildTokenSize.MIN) {
-        setErrorMessages(
-          'hierarchicalParams.maxChildTokenSize',
-          t('validation.minRange.message', {
-            size: EDGE_HIERARCHICAL_CHUNK_PARAMS.maxChildTokenSize.MIN,
-          })
-        );
-        return false;
-      } else if (
-        hierarchicalParams.maxChildTokenSize > EDGE_HIERARCHICAL_CHUNK_PARAMS.maxChildTokenSize.MAX[embeddingsModel]
-      ) {
-        setErrorMessages(
-          'hierarchicalParams.maxChildTokenSize',
-          t('validation.maxRange.message', {
-            size: EDGE_HIERARCHICAL_CHUNK_PARAMS.maxChildTokenSize.MAX[embeddingsModel],
-          })
-        );
-        return false;
-      }
-
-      if (hierarchicalParams.maxParentTokenSize < hierarchicalParams.maxChildTokenSize) {
-        setErrorMessages(
-          'hierarchicalParams.maxParentTokenSize',
-          t('validation.parentTokenRange.message')
-        );
-        return false;
-      }
-    } else if (chunkingStrategy === 'semantic') {
-      if (semanticParams.maxTokens < EDGE_SEMANTIC_CHUNK_PARAMS.maxTokens.MIN) {
-        setErrorMessages(
-          'semanticParams.maxTokenss',
-          t('validation.minRange.message', {
-            size: EDGE_SEMANTIC_CHUNK_PARAMS.maxTokens.MIN,
-          })
-        );
-        return false;
-      } else if (
-        semanticParams.maxTokens > EDGE_SEMANTIC_CHUNK_PARAMS.maxTokens.MAX[embeddingsModel]
-      ) {
-        setErrorMessages(
-          'semanticParams.maxTokens',
-          t('validation.maxRange.message', {
-            size: EDGE_SEMANTIC_CHUNK_PARAMS.maxTokens.MAX[embeddingsModel],
-          })
-        );
-        return false;
-      }
-
-      if (semanticParams.bufferSize < EDGE_SEMANTIC_CHUNK_PARAMS.bufferSize.MIN) {
-        setErrorMessages(
-          'semanticParams.bufferSize',
-          t('validation.minRange.message', {
-            size: EDGE_SEMANTIC_CHUNK_PARAMS.bufferSize.MIN,
-          })
-        );
-        return false;
-      } else if (
-        semanticParams.bufferSize > EDGE_SEMANTIC_CHUNK_PARAMS.bufferSize.MAX
-      ) {
-        setErrorMessages(
-          'semanticParams.bufferSize',
-          t('validation.maxRange.message', {
-            size: EDGE_SEMANTIC_CHUNK_PARAMS.bufferSize.MAX,
-          })
-        );
-        return false;
-      }
-
-      if (semanticParams.breakpointPercentileThreshold < EDGE_SEMANTIC_CHUNK_PARAMS.breakpointPercentileThreshold.MIN) {
-        setErrorMessages(
-          'semanticParams.breakpointPercentileThreshold',
-          t('validation.minRange.message', {
-            size: EDGE_SEMANTIC_CHUNK_PARAMS.breakpointPercentileThreshold.MIN,
-          })
-        );
-        return false;
-      } else if (
-        semanticParams.breakpointPercentileThreshold > EDGE_SEMANTIC_CHUNK_PARAMS.breakpointPercentileThreshold.MAX
-      ) {
-        setErrorMessages(
-          'semanticParams.breakpointPercentileThreshold',
-          t('validation.maxRange.message', {
-            size: EDGE_SEMANTIC_CHUNK_PARAMS.breakpointPercentileThreshold.MAX,
+            size: EDGE_CHUNKING_OVERLAP_PERCENTAGE.MAX,
           })
         );
         return false;
@@ -825,9 +671,8 @@ const BotKbEditPage: React.FC = () => {
     setErrorMessages,
     embeddingsModel,
     chunkingStrategy,
-    fixedSizeParams,
-    hierarchicalParams,
-    semanticParams,
+    chunkingMaxTokens,
+    chunkingOverlapPercentage,
     t,
   ]);
 
@@ -865,20 +710,10 @@ const BotKbEditPage: React.FC = () => {
       bedrockKnowledgeBase: {
         knowledgeBaseId,
         embeddingsModel,
-        chunkingConfiguration: (() => {
-          switch (chunkingStrategy) {
-            case 'default':
-              return { chunkingStrategy: 'default' };
-            case 'fixed_size':
-              return fixedSizeParams;
-            case 'hierarchical':
-              return hierarchicalParams;
-            case 'semantic':
-              return semanticParams;
-            default:
-              return { chunkingStrategy: 'none' };
-          }
-        })(),
+        chunkingStrategy,
+        maxTokens: chunkingStrategy == 'fixed_size' ? chunkingMaxTokens : null,
+        overlapPercentage:
+          chunkingStrategy == 'fixed_size' ? chunkingOverlapPercentage : null,
         openSearch: openSearchParams,
         searchParams: searchParams,
       },
@@ -931,9 +766,8 @@ const BotKbEditPage: React.FC = () => {
     knowledgeBaseId,
     embeddingsModel,
     chunkingStrategy,
-    fixedSizeParams,
-    hierarchicalParams,
-    semanticParams,
+    chunkingMaxTokens,
+    chunkingOverlapPercentage,
     openSearchParams,
     hateThreshold,
     insultsThreshold,
@@ -980,20 +814,11 @@ const BotKbEditPage: React.FC = () => {
         bedrockKnowledgeBase: {
           knowledgeBaseId,
           embeddingsModel,
-          chunkingConfiguration: (() => {
-            switch (chunkingStrategy) {
-              case 'default':
-                return { chunkingStrategy: 'default' };
-              case 'fixed_size':
-                return fixedSizeParams;
-              case 'hierarchical':
-                return hierarchicalParams;
-              case 'semantic':
-                return semanticParams;
-              default:
-                return { chunkingStrategy: 'none' };
-            }
-          })(),
+          chunkingStrategy,
+          maxTokens:
+            chunkingStrategy == 'fixed_size' ? chunkingMaxTokens : null,
+          overlapPercentage:
+            chunkingStrategy == 'fixed_size' ? chunkingOverlapPercentage : null,
           openSearch: openSearchParams,
           searchParams: searchParams,
         },
@@ -1050,9 +875,8 @@ const BotKbEditPage: React.FC = () => {
     knowledgeBaseId,
     embeddingsModel,
     chunkingStrategy,
-    fixedSizeParams,
-    hierarchicalParams,
-    semanticParams,
+    chunkingMaxTokens,
+    chunkingOverlapPercentage,
     openSearchParams,
     hateThreshold,
     insultsThreshold,
@@ -1371,7 +1195,7 @@ const BotKbEditPage: React.FC = () => {
                   <>
                     <div className="mx-4 mt-2">
                       <Slider
-                        value={fixedSizeParams.maxTokens}
+                        value={chunkingMaxTokens}
                         hint={t('knowledgeBaseSettings.chunkingMaxTokens.hint')}
                         label={
                           <div className="flex items-center gap-1">
@@ -1383,23 +1207,18 @@ const BotKbEditPage: React.FC = () => {
                           </div>
                         }
                         range={{
-                          min: EDGE_FIXED_CHUNK_PARAMS.maxTokens.MIN,
-                          max: EDGE_FIXED_CHUNK_PARAMS.maxTokens.MAX[embeddingsModel],
-                          step: EDGE_FIXED_CHUNK_PARAMS.maxTokens.STEP,
+                          min: EDGE_CHUNKING_MAX_TOKENS.MIN,
+                          max: EDGE_CHUNKING_MAX_TOKENS.MAX[embeddingsModel],
+                          step: EDGE_CHUNKING_MAX_TOKENS.STEP,
                         }}
-                        onChange={(value) =>
-                          setFixedSizeParams((params) => ({
-                            ...params,
-                            maxTokens: value,
-                          })
-                          )}
+                        onChange={setChunkingMaxTokens}
                         disabled={!isNewBot}
-                        errorMessage={errorMessages['fixedSizeParams.maxTokens']}
+                        errorMessage={errorMessages['chunkingMaxTokens']}
                       />
                     </div>
                     <div className="mx-4 mt-2">
                       <Slider
-                        value={fixedSizeParams.overlapPercentage}
+                        value={chunkingOverlapPercentage}
                         hint={t(
                           'knowledgeBaseSettings.chunkingOverlapPercentage.hint'
                         )}
@@ -1415,219 +1234,16 @@ const BotKbEditPage: React.FC = () => {
                           </div>
                         }
                         range={{
-                          min: EDGE_FIXED_CHUNK_PARAMS.overlapPercentage.MIN,
-                          max: EDGE_FIXED_CHUNK_PARAMS.overlapPercentage.MAX,
-                          step: EDGE_FIXED_CHUNK_PARAMS.overlapPercentage.STEP,
+                          min: EDGE_CHUNKING_OVERLAP_PERCENTAGE.MIN,
+                          max: EDGE_CHUNKING_OVERLAP_PERCENTAGE.MAX,
+                          step: EDGE_CHUNKING_OVERLAP_PERCENTAGE.STEP,
                         }}
                         onChange={(percentage) =>
-                          setFixedSizeParams((params) => ({
-                            ...params,
-                            overlapPercentage: percentage,
-                          })
-                          )}
+                          setChunkingOverlapPercentage(percentage)
+                        }
                         disabled={!isNewBot}
                         errorMessage={
-                          errorMessages['fixedSizeParams.overlapPercentage']
-                        }
-                      />
-                    </div>
-                  </>
-                )}
-                {chunkingStrategy === 'hierarchical' && (
-                  <>
-                    <div className="mx-4 mt-2">
-                      <Slider
-                        value={hierarchicalParams.overlapTokens}
-                        hint={t('knowledgeBaseSettings.overlapTokens.hint')}
-                        label={
-                          <div className="flex items-center gap-1">
-                            {t('knowledgeBaseSettings.overlapTokens.label')}
-                            <Help
-                              direction={TooltipDirection.RIGHT}
-                              message={t('embeddingSettings.help.overlapTokens')}
-                            />
-                          </div>
-                        }
-                        range={{
-                          min: EDGE_HIERARCHICAL_CHUNK_PARAMS.overlapTokens.MIN,
-                          max: EDGE_HIERARCHICAL_CHUNK_PARAMS.maxParentTokenSize.MAX[embeddingsModel],
-                          step: EDGE_HIERARCHICAL_CHUNK_PARAMS.overlapTokens.STEP,
-                        }}
-                        onChange={(value) =>
-                          setHierarchicalParams((params) => ({
-                            ...params,
-                            overlapTokens: value,
-                          })
-                          )}
-                        disabled={!isNewBot}
-                        errorMessage={errorMessages['hierarchicalParams.overlapTokens']}
-                      />
-                    </div>
-                    <div className="mx-4 mt-2">
-                      <Slider
-                        value={hierarchicalParams.maxParentTokenSize}
-                        hint={t(
-                          'knowledgeBaseSettings.maxParentTokenSize.hint'
-                        )}
-                        label={
-                          <div className="flex items-center gap-1">
-                            {t(
-                              'knowledgeBaseSettings.maxParentTokenSize.label'
-                            )}
-                            <Help
-                              direction={TooltipDirection.RIGHT}
-                              message={t('embeddingSettings.help.maxParentTokenSize')}
-                            />
-                          </div>
-                        }
-                        range={{
-                          min: EDGE_HIERARCHICAL_CHUNK_PARAMS.maxParentTokenSize.MIN,
-                          max: EDGE_HIERARCHICAL_CHUNK_PARAMS.maxParentTokenSize.MAX[embeddingsModel],
-                          step: EDGE_HIERARCHICAL_CHUNK_PARAMS.maxParentTokenSize.STEP,
-                        }}
-                        onChange={(value) =>
-                          setHierarchicalParams((params) => ({
-                            ...params,
-                            maxParentTokenSize: value,
-                          })
-                          )}
-                        disabled={!isNewBot}
-                        errorMessage={
-                          errorMessages['hierarchicalParams.maxParentTokenSize']
-                        }
-                      />
-                    </div>
-                    <div className="mx-4 mt-2">
-                      <Slider
-                        value={hierarchicalParams.maxChildTokenSize}
-                        hint={t(
-                          'knowledgeBaseSettings.maxChildTokenSize.hint'
-                        )}
-                        label={
-                          <div className="flex items-center gap-1">
-                            {t(
-                              'knowledgeBaseSettings.maxChildTokenSize.label'
-                            )}
-                            <Help
-                              direction={TooltipDirection.RIGHT}
-                              message={t('embeddingSettings.help.maxChildTokenSize')}
-                            />
-                          </div>
-                        }
-                        range={{
-                          min: EDGE_HIERARCHICAL_CHUNK_PARAMS.maxChildTokenSize.MIN,
-                          max: EDGE_HIERARCHICAL_CHUNK_PARAMS.maxChildTokenSize.MAX[embeddingsModel],
-                          step: EDGE_HIERARCHICAL_CHUNK_PARAMS.maxChildTokenSize.STEP,
-                        }}
-                        onChange={(value) =>
-                          setHierarchicalParams((params) => ({
-                            ...params,
-                            maxChildTokenSize: value,
-                          })
-                          )}
-                        disabled={!isNewBot}
-                        errorMessage={
-                          errorMessages['hierarchicalParams.maxChildTokenSize']
-                        }
-                      />
-                    </div>
-                  </>
-                )}
-                {chunkingStrategy === 'semantic' && (
-                  <>
-                    <div className="mx-4 mt-2">
-                      <Slider
-                        value={semanticParams.maxTokens}
-                        hint={t('knowledgeBaseSettings.chunkingMaxTokens.hint')}
-                        label={
-                          <div className="flex items-center gap-1">
-                            {t('knowledgeBaseSettings.chunkingMaxTokens.label')}
-                            <Help
-                              direction={TooltipDirection.RIGHT}
-                              message={t('embeddingSettings.help.chunkSize')}
-                            />
-                          </div>
-                        }
-                        range={{
-                          min: EDGE_SEMANTIC_CHUNK_PARAMS.maxTokens.MIN,
-                          max: EDGE_SEMANTIC_CHUNK_PARAMS.maxTokens.MAX[embeddingsModel],
-                          step: EDGE_SEMANTIC_CHUNK_PARAMS.maxTokens.STEP,
-                        }}
-                        onChange={(value) =>
-                          setSemanticParams((params) => ({
-                            ...params,
-                            maxTokens: value,
-                          })
-                          )}
-                        disabled={!isNewBot}
-                        errorMessage={errorMessages['semanticParams.maxTokens']}
-                      />
-                    </div>
-                    <div className="mx-4 mt-2">
-                      <Slider
-                        value={semanticParams.bufferSize}
-                        hint={t(
-                          'knowledgeBaseSettings.bufferSize.hint'
-                        )}
-                        label={
-                          <div className="flex items-center gap-1">
-                            {t(
-                              'knowledgeBaseSettings.bufferSize.label'
-                            )}
-                            <Help
-                              direction={TooltipDirection.RIGHT}
-                              message={t('embeddingSettings.help.bufferSize')}
-                            />
-                          </div>
-                        }
-                        range={{
-                          min: EDGE_SEMANTIC_CHUNK_PARAMS.bufferSize.MIN,
-                          max: EDGE_SEMANTIC_CHUNK_PARAMS.bufferSize.MAX,
-                          step: EDGE_SEMANTIC_CHUNK_PARAMS.bufferSize.STEP,
-                        }}
-                        onChange={(value) =>
-                          setSemanticParams((params) => ({
-                            ...params,
-                            bufferSize: value,
-                          })
-                          )}
-                        disabled={!isNewBot}
-                        errorMessage={
-                          errorMessages['semanticParams.bufferSize']
-                        }
-                      />
-                    </div>
-                    <div className="mx-4 mt-2">
-                      <Slider
-                        value={semanticParams.breakpointPercentileThreshold}
-                        hint={t(
-                          'knowledgeBaseSettings.breakpointPercentileThreshold.hint'
-                        )}
-                        label={
-                          <div className="flex items-center gap-1">
-                            {t(
-                              'knowledgeBaseSettings.breakpointPercentileThreshold.label'
-                            )}
-                            <Help
-                              direction={TooltipDirection.RIGHT}
-                              message={t('embeddingSettings.help.breakpointPercentileThreshold')}
-                            />
-                          </div>
-                        }
-                        range={{
-                          min: EDGE_SEMANTIC_CHUNK_PARAMS.breakpointPercentileThreshold.MIN,
-                          max: EDGE_SEMANTIC_CHUNK_PARAMS.breakpointPercentileThreshold.MAX,
-                          step: EDGE_SEMANTIC_CHUNK_PARAMS.breakpointPercentileThreshold.STEP,
-                        }}
-                        onChange={(percentage) =>
-                          setSemanticParams((params) => ({
-                            ...params,
-                            breakpointPercentileThreshold: percentage,
-                          })
-                          )}
-                        disabled={!isNewBot}
-                        errorMessage={
-                          errorMessages['semanticParams.breakpointPercentileThreshold']
+                          errorMessages['chunkingOverlapPercentage']
                         }
                       />
                     </div>
@@ -1898,14 +1514,13 @@ const BotKbEditPage: React.FC = () => {
                 </Alert>
               )}
 
-              <div className="flex justify-between border-t">
+                <div className="flex justify-between">
                 <Button outlined icon={<PiCaretLeft />} onClick={onClickBack}>
                   {t('button.back')}
                 </Button>
 
                 {isNewBot ? (
                   <Button
-                    className="mt-2"
                     onClick={onClickCreate}
                     loading={isLoading}
                     disabled={disabledRegister}>
@@ -1913,7 +1528,6 @@ const BotKbEditPage: React.FC = () => {
                   </Button>
                 ) : (
                   <Button
-                    className="mt-2"
                     onClick={onClickEdit}
                     loading={isLoading}
                     disabled={disabledRegister}>
@@ -1930,3 +1544,6 @@ const BotKbEditPage: React.FC = () => {
 };
 
 export default BotKbEditPage;
+
+
+
