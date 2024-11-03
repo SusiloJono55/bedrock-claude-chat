@@ -132,15 +132,7 @@ export class BedrockChatStack extends cdk.Stack {
 
     const auth = new Auth(this, "Auth", {
       origin: frontend.getOrigin(),
-      userPoolDomainPrefixKey: props.userPoolDomainPrefix,
-      idp,
-      allowedSignUpEmailDomains: props.allowedSignUpEmailDomains,
-      autoJoinUserGroups: props.autoJoinUserGroups,
-      selfSignUpEnabled: props.selfSignUpEnabled,
-    });
-
-    const authfe = new Auth(this, "AuthFE", {
-      origin: fe.getOrigin(),
+      originfe: fe.getOrigin(),
       userPoolDomainPrefixKey: props.userPoolDomainPrefix,
       idp,
       allowedSignUpEmailDomains: props.allowedSignUpEmailDomains,
@@ -209,7 +201,7 @@ export class BedrockChatStack extends cdk.Stack {
       webSocketApiEndpoint: websocket.apiEndpoint,
       userPoolDomainPrefix: props.userPoolDomainPrefix,
       enableMistral: props.enableMistral,
-      auth: authfe,
+      auth: auth,
       idp,
     });
 

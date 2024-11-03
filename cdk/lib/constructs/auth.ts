@@ -19,6 +19,7 @@ import { Idp, TIdentityProvider } from "../utils/identity-provider";
 
 export interface AuthProps {
   readonly origin: string;
+  readonly originfe: string;
   readonly userPoolDomainPrefixKey: string;
   readonly idp: Idp;
   readonly allowedSignUpEmailDomains: string[];
@@ -29,6 +30,7 @@ export interface AuthProps {
 export class Auth extends Construct {
   readonly userPool: UserPool;
   readonly client: UserPoolClient;
+  readonly clientFE: UserPoolClient;
   constructor(scope: Construct, id: string, props: AuthProps) {
     super(scope, id);
     const userPool = new UserPool(this, "UserPool", {
@@ -68,7 +70,30 @@ export class Auth extends Construct {
       };
     })();
 
+    const clientPropsFE = (() => {
+      const defaultProps = {
+        idTokenValidity: Duration.days(1),
+        authFlows: {
+          userPassword: true,
+          userSrp: true,
+        },
+      };
+      if (!props.idp.isExist()) return defaultProps;
+      return {
+        ...defaultProps,
+        oAuth: {
+          callbackUrls: [props.originfe],
+          logoutUrls: [props.originfe],
+        },
+        supportedIdentityProviders: [
+          ...props.idp.getSupportedIndetityProviders(),
+        ],
+      };
+    })();
+
     const client = userPool.addClient(`Client`, clientProps);
+
+    const clientFE = userPool.addClient(`Client`, clientPropsFE);
 
     const configureProvider = (
       provider: TIdentityProvider,
@@ -138,6 +163,7 @@ export class Auth extends Construct {
     if (props.idp.isExist()) {
       for (const provider of props.idp.getProviders()) {
         configureProvider(provider, userPool, client);
+        configureProvider(provider, userPool, clientFE);
       }
 
       userPool.addDomain("UserPool", {
@@ -277,10 +303,12 @@ export class Auth extends Construct {
     }
 
     this.client = client;
+    this.clientFE = clientFE;
     this.userPool = userPool;
 
     new CfnOutput(this, "UserPoolId", { value: userPool.userPoolId });
     new CfnOutput(this, "UserPoolClientId", { value: client.userPoolClientId });
+    new CfnOutput(this, "UserPoolClientFEId", { value: clientFE.userPoolClientId });
     if (props.idp.isExist())
       new CfnOutput(this, "ApprovedRedirectURI", {
         value: `https://${props.userPoolDomainPrefixKey}.auth.${
