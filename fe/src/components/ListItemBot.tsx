@@ -14,7 +14,7 @@ type Props = BaseProps & {
 };
 
 const ListItemBot: React.FC<Props> = (props) => {
-  const { t } = useTranslation();
+  useTranslation();
   return (
     <div
       key={props.bot.id}

@@ -14,26 +14,17 @@ import useScroll from '../hooks/useScroll';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   PiArrowsCounterClockwise,
-  PiLink,
   PiPenNib,
-  PiPencilLine,
-  PiStar,
-  PiStarFill,
   PiWarningCircleFill,
 } from 'react-icons/pi';
 import Button from '../components/Button';
 import { useTranslation } from 'react-i18next';
-import SwitchBedrockModel from '../components/SwitchBedrockModel';
 import useSnackbar from '../hooks/useSnackbar';
 import useBot from '../hooks/useBot';
 import useConversation from '../hooks/useConversation';
-import ButtonPopover from '../components/PopoverMenu';
-import PopoverItem from '../components/PopoverItem';
 
 import { copyBotUrl } from '../utils/BotUtils';
 import { produce } from 'immer';
-import ButtonIcon from '../components/ButtonIcon';
-import StatusSyncBot from '../components/StatusSyncBot';
 import Alert from '../components/Alert';
 import useBotSummary from '../hooks/useBotSummary';
 import useModel from '../hooks/useModel';
@@ -70,8 +61,6 @@ const ChatPage: React.FC = () => {
     setCurrentMessageId,
     regenerate,
     continueGenerate,
-    getPostedModel,
-    loadingConversation,
     getShouldContinue,
     getRelatedDocuments,
     giveFeedback,
@@ -128,7 +117,7 @@ const ChatPage: React.FC = () => {
     }
   }, [bot, botError, t]);
 
-  const description = useMemo<string>(() => {
+  useMemo<string>(() => {
     if (!bot) {
       return '';
     } else if (bot.description === '') {
@@ -217,14 +206,14 @@ const ChatPage: React.FC = () => {
   }, [messages, scrollToBottom, scrollToTop]);
 
   const { updateMyBotStarred, updateSharedBotStarred } = useBot();
-  const onClickBotEdit = useCallback(
+  useCallback(
     (botId: string) => {
       navigate(`/bot/edit/${botId}`);
     },
     [navigate]
   );
 
-  const onClickStar = useCallback(() => {
+  useCallback(() => {
     if (!bot) {
       return;
     }
@@ -249,8 +238,8 @@ const ChatPage: React.FC = () => {
     }
   }, [bot, mutateBot, updateMyBotStarred, updateSharedBotStarred]);
 
-  const [copyLabel, setCopyLabel] = useState(t('bot.titleSubmenu.copyLink'));
-  const onClickCopyUrl = useCallback(
+  const [_, setCopyLabel] = useState(t('bot.titleSubmenu.copyLink'));
+  useCallback(
     (botId: string) => {
       copyBotUrl(botId);
       setCopyLabel(t('bot.titleSubmenu.copiedLink'));
@@ -261,7 +250,7 @@ const ChatPage: React.FC = () => {
     [t]
   );
 
-  const onClickSyncError = useCallback(() => {
+  useCallback(() => {
     navigate(`/bot/edit/${bot?.id}`);
   }, [bot?.id, navigate]);
 

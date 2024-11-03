@@ -15,7 +15,6 @@ import {
   PiCheck,
   PiCompass,
   PiGlobe,
-  PiNotePencil,
   PiPencilLine,
   PiRobot,
   PiShareNetwork,
@@ -189,7 +188,7 @@ const ChatListDrawer: React.FC<Props> = (props) => {
   const { t } = useTranslation();
   const { getPageLabel } = usePageLabel();
   const { opened, switchOpen } = useDrawer();
-  const { conversations, starredBots, recentlyUsedUnsterredBots } = props;
+  const { conversations, starredBots } = props;
 
   const [prevConversations, setPrevConversations] =
     useState<typeof conversations>();
@@ -217,7 +216,7 @@ const ChatListDrawer: React.FC<Props> = (props) => {
     }
   }, [conversations, prevConversations]);
 
-  const onClickNewChat = useCallback(() => {
+  useCallback(() => {
     newChat();
     closeSamllDrawer();
     // eslint-disable-next-line react-hooks/exhaustive-deps

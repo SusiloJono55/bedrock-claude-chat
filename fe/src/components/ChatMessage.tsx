@@ -1,12 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import ChatMessageMarkdown from './ChatMessageMarkdown';
-import ButtonCopy from './ButtonCopy';
 import {
   PiCaretLeftBold,
   PiNotePencil,
   PiUserFill,
-  PiThumbsDown,
-  PiThumbsDownFill,
 } from 'react-icons/pi';
 import { BaseProps } from '../@types/common';
 import {
