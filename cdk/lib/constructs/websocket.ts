@@ -100,7 +100,7 @@ export class WebSocket extends Construct {
         ACCOUNT: Stack.of(this).account,
         REGION: Stack.of(this).region,
         USER_POOL_ID: props.auth.userPool.userPoolId,
-        CLIENT_ID: props.auth.client.userPoolClientId,
+        CLIENT_ID: props.auth.clientFE.userPoolClientId,
         BEDROCK_REGION: props.bedrockRegion,
         TABLE_NAME: database.tableName,
         TABLE_ACCESS_ROLE_ARN: tableAccessRole.roleArn,
