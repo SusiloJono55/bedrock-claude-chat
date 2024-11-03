@@ -229,7 +229,7 @@ export class Api extends Construct {
       "Authorizer",
       props.auth.userPool,
       {
-        userPoolClients: [props.auth.client],
+        userPoolClients: [props.auth.client, props.auth.clientFE],
       }
     );
     let routeProps: any = {
