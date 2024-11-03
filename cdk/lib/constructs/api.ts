@@ -186,7 +186,7 @@ export class Api extends Construct {
         TABLE_NAME: database.tableName,
         CORS_ALLOW_ORIGINS: allowOrigins.join(","),
         USER_POOL_ID: props.auth.userPool.userPoolId,
-        CLIENT_ID: props.auth.clientFE.userPoolClientId,
+        CLIENT_ID: props.auth.client.userPoolClientId,
         ACCOUNT: Stack.of(this).account,
         REGION: Stack.of(this).region,
         BEDROCK_REGION: props.bedrockRegion,
@@ -229,7 +229,7 @@ export class Api extends Construct {
       "Authorizer",
       props.auth.userPool,
       {
-        userPoolClients: [props.auth.client, props.auth.clientFE],
+        userPoolClients: [props.auth.client],
       }
     );
     let routeProps: any = {

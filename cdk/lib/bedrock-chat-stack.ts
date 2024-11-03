@@ -132,7 +132,6 @@ export class BedrockChatStack extends cdk.Stack {
 
     const auth = new Auth(this, "Auth", {
       origin: frontend.getOrigin(),
-      originfe: fe.getOrigin(),
       userPoolDomainPrefixKey: props.userPoolDomainPrefix,
       idp,
       allowedSignUpEmailDomains: props.allowedSignUpEmailDomains,
