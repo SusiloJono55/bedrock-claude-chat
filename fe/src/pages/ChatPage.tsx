@@ -427,7 +427,7 @@ const ChatPage: React.FC = () => {
                     <SwitchBedrockModel className="mt-3 w-min" />
                   )} */}
                   <div className="absolute mx-3 my-16 mt-5 flex items-center justify-center text-4xl font-bold text-gray">
-                    <h3>
+                    <h3 className="text-2xl">
                     {!MISTRAL_ENABLED
                       ? t('app.name')
                       : t('app.nameWithoutClaude')}
