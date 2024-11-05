@@ -13,7 +13,7 @@ import ButtonIcon from './ButtonIcon';
 import {
   PiChat,
   PiCheck,
-  PiCompass,
+  // PiCompass,
   PiGlobe,
   PiPencilLine,
   PiRobot,
