@@ -357,7 +357,7 @@ const ChatPage: React.FC = () => {
       onDrop={endDnd}
       onDragEnd={endDnd}>
       <div className="flex-1 overflow-hidden">
-        <div className="sticky top-0 z-10 mb-1.5 flex h-14 w-full items-center justify-between border-b bg-aws-paper p-2">
+        <div className="sticky top-0 z-10 mb-1.5 flex h-14 w-full items-center justify-between bg-header-chat p-2">
           <div className="flex w-full justify-between">
             <div className="p-2">
               <div className="mr-10 font-bold">{pageTitle}</div>
@@ -427,28 +427,12 @@ const ChatPage: React.FC = () => {
                     <SwitchBedrockModel className="mt-3 w-min" />
                   )} */}
                   <div className="absolute mx-3 my-16 mt-5 flex items-center justify-center text-4xl font-bold text-gray">
+                    <h3>
                     {!MISTRAL_ENABLED
                       ? t('app.name')
                       : t('app.nameWithoutClaude')}
+                    </h3>
                   </div>
-                  {/* Area Recomendation Question */}
-                  {messages.length === 0 && (
-                    <div className="mb-3 flex w-11/12 flex-wrap-reverse justify-start gap-2 md:w-10/12 lg:w-4/6 xl:w-3/6" style={{ marginTop: '5rem'}}>
-                      {bot?.conversationQuickStarters?.map((qs, idx) => (
-                        <div
-                          key={idx}
-                          className="w-[calc(33.333%-0.5rem)] cursor-pointer rounded-2xl border border-1 p-2 text-sm text-dark-gray hover:shadow-lg"
-                          onClick={() => {
-                            onSend(qs.example);
-                          }}>
-                          <div>
-                            <PiPenNib />
-                          </div>
-                          {qs.title}
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
               ) : (
                 <>
@@ -456,7 +440,7 @@ const ChatPage: React.FC = () => {
                     <div
                       key={idx}
                       className={`${
-                        message.role === 'assistant' ? 'bg-aws-squid-ink/5' : ''
+                        message.role === 'assistant' ? 'bg-aws-squid-ink' : ''
                       }`}>
                       <ChatMessageWithRelatedDocuments
                         chatContent={message}
@@ -499,6 +483,24 @@ const ChatPage: React.FC = () => {
       </div>
 
       <div className="bottom-0 z-0 flex w-full flex-col items-center justify-center">
+        {/* Area Recomendation Question */}
+        {messages.length === 0 && (
+          <div className="mb-3 flex w-11/12 flex-wrap-reverse justify-start gap-2 md:w-10/12 lg:w-4/6 xl:w-3/6 lg:mt-20">
+            {bot?.conversationQuickStarters?.map((qs, idx) => (
+              <div
+                key={idx}
+                className="w-[calc(33.333%-0.5rem)] cursor-pointer rounded-2xl border border-1 p-2 text-sm text-dark-gray hover:shadow-lg"
+                onClick={() => {
+                  onSend(qs.example);
+                }}>
+                <div>
+                  <PiPenNib />
+                </div>
+                {qs.title}
+              </div>
+            ))}
+          </div>
+        )}
         {bot && bot.syncStatus !== SyncStatus.SUCCEEDED && (
           <div className="mb-8 w-1/2">
             <Alert

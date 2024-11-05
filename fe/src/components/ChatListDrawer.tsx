@@ -261,7 +261,7 @@ const ChatListDrawer: React.FC<Props> = (props) => {
 
   return (
     <>
-      <div className="relative h-full overflow-y-auto bg-aws-squid-ink scrollbar-thin scrollbar-track-white scrollbar-thumb-aws-squid-ink/30 ">
+      <div className="relative h-full overflow-y-auto bg-light-mint scrollbar-thin scrollbar-track-white scrollbar-thumb-aws-squid-ink/30 ">
         <nav
           className={`lg:visible lg:w-64 ${
             opened ? 'visible w-64' : 'invisible w-0'
@@ -360,14 +360,14 @@ const ChatListDrawer: React.FC<Props> = (props) => {
           <div
             className={`${
               opened ? 'w-64' : 'w-0'
-            } fixed bottom-0 flex h-12 items-center justify-start border-t bg-aws-squid-ink transition-width lg:w-64`}>
-                <DrawerItem
+            } fixed bottom-0 flex h-12 items-center justify-start border-t bg-light-mint transition-width lg:w-64`}>
+                {/* <DrawerItem
                   isActive={false}
                   icon={<PiCompass />}
                   to="/bot/explore"
                   labelComponent={getPageLabel('/bot/explore')}
                   onClick={closeSamllDrawer}
-                />
+                /> */}
                 <Menu
                   onSignOut={props.onSignOut}
                   onSelectLanguage={props.onSelectLanguage}

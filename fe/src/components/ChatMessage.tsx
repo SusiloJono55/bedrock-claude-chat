@@ -124,7 +124,7 @@ const ChatMessage: React.FC<Props> = (props) => {
 
       <div className="order-first col-span-12 flex lg:order-none lg:col-span-8 lg:col-start-3">
         {chatContent?.role === 'user' && (
-          <div className="h-min rounded-full bg-aws-sea-blue p-2 text-xl text-white">
+          <div className="h-min rounded-full bg-pq-orange p-2 text-xl text-white">
             <PiUserFill />
           </div>
         )}
@@ -287,7 +287,7 @@ const ChatMessage: React.FC<Props> = (props) => {
 
       <div className="col-start-11">
         <div className="flex flex-col items-end">
-          {chatContent?.role === 'user' && !isEdit && (
+          {/* {chatContent?.role === 'user' && !isEdit && (
             <ButtonIcon
               className="text-dark-gray"
               onClick={() => {
@@ -296,7 +296,7 @@ const ChatMessage: React.FC<Props> = (props) => {
               }}>
               <PiNotePencil />
             </ButtonIcon>
-          )}
+          )} */}
           {/* {chatContent?.role === 'assistant' && (
             <div className="flex">
               <ButtonIcon

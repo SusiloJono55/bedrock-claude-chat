@@ -18,7 +18,7 @@ const useModelState = create<{
   modelId: Model;
   setModelId: (m: Model) => void;
 }>((set) => ({
-  modelId: 'claude-v3-haiku',
+  modelId: 'claude-v3.5-sonnet',
   setModelId: (m) => {
     set({
       modelId: m,
@@ -39,36 +39,36 @@ const useModel = () => {
   >(() => {
     return !MISTRAL_ENABLED
       ? [
-          {
-            modelId: 'claude-v3-haiku',
-            label: t('model.haiku3.label'),
-            description: t('model.haiku3.description'),
-            supportMediaType: CLAUDE_SUPPORTED_MEDIA_TYPES,
-          },
-          {
-            modelId: 'claude-v3-sonnet',
-            label: t('model.sonnet3.label'),
-            description: t('model.sonnet3.description'),
-            supportMediaType: CLAUDE_SUPPORTED_MEDIA_TYPES,
-          },
+          // {
+          //   modelId: 'claude-v3-haiku',
+          //   label: t('model.haiku3.label'),
+          //   description: t('model.haiku3.description'),
+          //   supportMediaType: CLAUDE_SUPPORTED_MEDIA_TYPES,
+          // },
+          // {
+          //   modelId: 'claude-v3-sonnet',
+          //   label: t('model.sonnet3.label'),
+          //   description: t('model.sonnet3.description'),
+          //   supportMediaType: CLAUDE_SUPPORTED_MEDIA_TYPES,
+          // },
           {
             modelId: 'claude-v3.5-sonnet',
             label: t('model.sonnet3-5.label'),
             description: t('model.sonnet3-5.description'),
             supportMediaType: CLAUDE_SUPPORTED_MEDIA_TYPES,
           },
-          {
-            modelId: 'claude-v3.5-sonnet-v2',
-            label: t('model.sonnet3-5-v2.label'),
-            description: t('model.sonnet3-5-v2.description'),
-            supportMediaType: CLAUDE_SUPPORTED_MEDIA_TYPES,
-          },
-          {
-            modelId: 'claude-v3-opus',
-            label: t('model.opus3.label'),
-            description: t('model.opus3.description'),
-            supportMediaType: CLAUDE_SUPPORTED_MEDIA_TYPES,
-          },
+          // {
+          //   modelId: 'claude-v3.5-sonnet-v2',
+          //   label: t('model.sonnet3-5-v2.label'),
+          //   description: t('model.sonnet3-5-v2.description'),
+          //   supportMediaType: CLAUDE_SUPPORTED_MEDIA_TYPES,
+          // },
+          // {
+          //   modelId: 'claude-v3-opus',
+          //   label: t('model.opus3.label'),
+          //   description: t('model.opus3.description'),
+          //   supportMediaType: CLAUDE_SUPPORTED_MEDIA_TYPES,
+          // },
         ]
       : [
           {
@@ -92,7 +92,7 @@ const useModel = () => {
   const { modelId, setModelId } = useModelState();
   const [recentUseModelId, setRecentUseModelId] = useLocalStorage(
     'recentUseModelId',
-    'claude-v3-haiku'
+    'claude-v3.5-sonnet'
   );
   useEffect(() => {
     // Restored from LocalStorage
