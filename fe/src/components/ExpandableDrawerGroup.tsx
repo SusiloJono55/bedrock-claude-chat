@@ -17,7 +17,7 @@ const ExpandableDrawerGroup: React.FC<Props> = ({
   return (
     <div className={`${props.className ?? ''}`}>
       <div
-        className="flex w-full cursor-pointer items-center transition hover:brightness-75"
+        className="flex w-full cursor-pointer items-center transition hover:brightness-75 bg-accordion p-3"
         onClick={() => {
           setIsShow(!isShow);
         }}>

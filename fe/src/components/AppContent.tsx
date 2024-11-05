@@ -120,15 +120,15 @@ const AppContent: React.FC<Props> = (props) => {
 
       <main className="min-h-dvh relative flex flex-col flex-1 overflow-y-hidden transition-width">
 
-        <header className="visible flex h-12 w-full items-center bg-aws-squid-ink p-3 text-lg text-aws-font-color-white lg:hidden lg:h-0">
+        <header className="visible flex h-12 w-full items-center bg-light-mint p-3 text-lg lg:hidden lg:h-0">
           <button
-            className="mr-2 rounded-full p-2 hover:brightness-50 focus:outline-none focus:ring-1 "
+            className="mr-0 rounded-full p-2 hover:brightness-50 focus:outline-none focus:ring-1 "
             onClick={() => {
               switchDrawer();
             }}>
             <PiList />
           </button>
-
+          <img src="/images/paques-logo-mobile.png" className="w-11 p-4" />
           <div className="flex-1 justify-center">
             {isGeneratedTitle ? (
               <>
