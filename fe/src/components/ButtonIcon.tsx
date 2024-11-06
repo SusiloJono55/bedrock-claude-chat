@@ -12,7 +12,7 @@ const ButtonIcon: React.FC<Props> = (props) => {
   return (
     <button
       className={twMerge(
-        'flex items-center justify-center rounded-full p-2 text-xl hover:shadow',
+        'flex items-center justify-center rounded-full p-2 text-xl hover:shadow visibility hidden',
         props.disabled ? 'opacity-30' : 'hover:brightness-75',
         props.className
       )}

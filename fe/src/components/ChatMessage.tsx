@@ -289,7 +289,7 @@ const ChatMessage: React.FC<Props> = (props) => {
         <div className="flex flex-col items-end">
           {chatContent?.role === 'user' && !isEdit && (
             <ButtonIcon
-              className="text-dark-gray"
+              className="text-dark-gray visibility hidden"
               onClick={() => {
                 setChangedContent(chatContent.content[firstTextContent].body);
                 setIsEdit(true);
