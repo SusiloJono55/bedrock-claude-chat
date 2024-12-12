@@ -5,6 +5,7 @@ from typing import Literal
 from app.agents.utils import get_available_tools, get_tool_by_name
 from app.config import DEFAULT_GENERATION_CONFIG as DEFAULT_CLAUDE_GENERATION_CONFIG
 from app.config import DEFAULT_MISTRAL_GENERATION_CONFIG
+from app.config import GenerationParams as GenerationParamsDict
 from app.repositories.common import (
     RecordNotFoundError,
     _get_table_client,
@@ -27,6 +28,7 @@ from app.repositories.custom_bot import (
     update_bot_pin_status,
 )
 from app.repositories.models.custom_bot import (
+    ActiveModelsModel,
     AgentModel,
     AgentToolModel,
     BotAliasModel,
@@ -39,6 +41,8 @@ from app.repositories.models.custom_bot import (
 from app.repositories.models.custom_bot_guardrails import BedrockGuardrailsModel
 from app.repositories.models.custom_bot_kb import BedrockKnowledgeBaseModel
 from app.routes.schemas.bot import (
+    ActiveModelsInput,
+    ActiveModelsOutput,
     Agent,
     AgentTool,
     BotInput,
@@ -134,8 +138,14 @@ def create_new_bot(user_id: str, bot_input: BotInput) -> BotOutput:
         )
         filenames = bot_input.knowledge.filenames
 
-    generation_params = (
-        bot_input.generation_params.model_dump()
+    generation_params: GenerationParamsDict = (
+        {
+            "max_tokens": bot_input.generation_params.max_tokens,
+            "top_k": bot_input.generation_params.top_k,
+            "top_p": bot_input.generation_params.top_p,
+            "temperature": bot_input.generation_params.temperature,
+            "stop_sequences": bot_input.generation_params.stop_sequences,
+        }
         if bot_input.generation_params
         else DEFAULT_GENERATION_CONFIG
     )
@@ -165,7 +175,7 @@ def create_new_bot(user_id: str, bot_input: BotInput) -> BotOutput:
             public_bot_id=None,
             is_pinned=False,
             owner_user_id=user_id,  # Owner is the creator
-            generation_params=GenerationParamsModel(**generation_params),  # type: ignore
+            generation_params=GenerationParamsModel(**generation_params),
             agent=agent,
             knowledge=KnowledgeModel(
                 source_urls=source_urls,
@@ -202,6 +212,9 @@ def create_new_bot(user_id: str, bot_input: BotInput) -> BotOutput:
                 BedrockGuardrailsModel(**(bot_input.bedrock_guardrails.model_dump()))
                 if bot_input.bedrock_guardrails
                 else None
+            ),
+            active_models=ActiveModelsModel.model_validate(
+                dict(bot_input.active_models)
             ),
         ),
     )
@@ -255,6 +268,7 @@ def create_new_bot(user_id: str, bot_input: BotInput) -> BotOutput:
             if bot_input.bedrock_guardrails
             else None
         ),
+        active_models=ActiveModelsOutput.model_validate(dict(bot_input.active_models)),
     )
 
 
@@ -290,8 +304,14 @@ def modify_owned_bot(
             + modify_input.knowledge.unchanged_filenames
         )
 
-    generation_params = (
-        modify_input.generation_params.model_dump()
+    generation_params: GenerationParamsDict = (
+        {
+            "max_tokens": modify_input.generation_params.max_tokens,
+            "top_k": modify_input.generation_params.top_k,
+            "top_p": modify_input.generation_params.top_p,
+            "temperature": modify_input.generation_params.temperature,
+            "stop_sequences": modify_input.generation_params.stop_sequences,
+        }
         if modify_input.generation_params
         else DEFAULT_GENERATION_CONFIG
     )
@@ -317,7 +337,7 @@ def modify_owned_bot(
     sync_status = (
         "QUEUED"
         if modify_input.is_embedding_required(bot)
-        or modify_input.guardrails_update_required(bot)
+        or modify_input.is_guardrails_update_required(bot)
         else "SUCCEEDED"
     )
 
@@ -361,6 +381,9 @@ def modify_owned_bot(
             if modify_input.bedrock_guardrails
             else None
         ),
+        active_models=ActiveModelsOutput.model_validate(
+            dict(modify_input.active_models)
+        ),
     )
 
     return BotModifyOutput(
@@ -403,6 +426,9 @@ def modify_owned_bot(
             BedrockGuardrailsOutput(**modify_input.bedrock_guardrails.model_dump())
             if modify_input.bedrock_guardrails
             else None
+        ),
+        active_models=ActiveModelsOutput.model_validate(
+            dict(modify_input.active_models)
         ),
     )
 
@@ -505,6 +531,7 @@ def fetch_all_bots_by_user_id(
                     ConversationQuickStarter(**starter)
                     for starter in item.get("ConversationQuickStarters", [])
                 ]
+                or bot.active_models != item["ActiveModels"]
             ):
                 # Update alias to the latest original bot
                 store_alias(
@@ -522,6 +549,9 @@ def fetch_all_bots_by_user_id(
                         has_knowledge=bot.has_knowledge(),
                         has_agent=bot.is_agent_enabled(),
                         conversation_quick_starters=bot.conversation_quick_starters,
+                        active_models=ActiveModelsModel.model_validate(
+                            dict(bot.active_models)
+                        ),
                     ),
                 )
 
@@ -618,6 +648,7 @@ def fetch_bot_summary(user_id: str, bot_id: str) -> BotSummaryOutput:
                 )
                 for starter in bot.conversation_quick_starters
             ],
+            active_models=ActiveModelsOutput.model_validate(dict(bot.active_models)),
         )
 
     except RecordNotFoundError:
@@ -625,6 +656,10 @@ def fetch_bot_summary(user_id: str, bot_id: str) -> BotSummaryOutput:
 
     try:
         alias = find_alias_by_id(user_id, bot_id)
+
+        # update bot model activate if alias is found.
+        bot = find_public_bot_by_id(bot_id)
+
         return BotSummaryOutput(
             id=alias.id,
             title=alias.title,
@@ -648,6 +683,7 @@ def fetch_bot_summary(user_id: str, bot_id: str) -> BotSummaryOutput:
                     for starter in alias.conversation_quick_starters
                 ]
             ),
+            active_models=ActiveModelsOutput.model_validate(dict(alias.active_models)),
         )
     except RecordNotFoundError:
         pass
@@ -677,6 +713,9 @@ def fetch_bot_summary(user_id: str, bot_id: str) -> BotSummaryOutput:
                     )
                     for starter in bot.conversation_quick_starters
                 ],
+                active_models=ActiveModelsOutput.model_validate(
+                    dict(bot.active_models)
+                ),
             ),
         )
         return BotSummaryOutput(
@@ -698,6 +737,7 @@ def fetch_bot_summary(user_id: str, bot_id: str) -> BotSummaryOutput:
                 )
                 for starter in bot.conversation_quick_starters
             ],
+            active_models=ActiveModelsOutput.model_validate(dict(bot.active_models)),
         )
     except RecordNotFoundError:
         raise RecordNotFoundError(

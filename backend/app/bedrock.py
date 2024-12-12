@@ -1,162 +1,111 @@
-import base64
-import json
 import logging
 import os
-import re
-from pathlib import Path
+from typing import TypeGuard, Dict, Any, Optional, Tuple
 
+from app.agents.tools.agent_tool import AgentTool
 from app.config import BEDROCK_PRICING
 from app.config import DEFAULT_GENERATION_CONFIG as DEFAULT_CLAUDE_GENERATION_CONFIG
 from app.config import DEFAULT_MISTRAL_GENERATION_CONFIG
-from app.repositories.models.conversation import ContentModel, MessageModel
+from app.repositories.models.conversation import (
+    SimpleMessageModel,
+    ContentModel,
+)
 from app.repositories.models.custom_bot import GenerationParamsModel
 from app.repositories.models.custom_bot_guardrails import BedrockGuardrailsModel
 from app.routes.schemas.conversation import type_model_name
-from app.utils import convert_dict_keys_to_camel_case, get_bedrock_runtime_client
-from typing_extensions import NotRequired, TypedDict, no_type_check
+from app.utils import get_bedrock_runtime_client
+
+from mypy_boto3_bedrock_runtime.type_defs import (
+    ConverseStreamRequestRequestTypeDef,
+    MessageTypeDef,
+    ConverseResponseTypeDef,
+    ContentBlockTypeDef,
+    GuardrailConverseContentBlockTypeDef,
+    InferenceConfigurationTypeDef,
+)
+from mypy_boto3_bedrock_runtime.literals import ConversationRoleType
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 BEDROCK_REGION = os.environ.get("BEDROCK_REGION", "us-east-1")
-ENABLE_MISTRAL = os.environ.get("ENABLE_MISTRAL", "") == "true"
+ENABLE_MISTRAL = os.environ.get("ENABLE_MISTRAL", "false") == "true"
 DEFAULT_GENERATION_CONFIG = (
     DEFAULT_MISTRAL_GENERATION_CONFIG
     if ENABLE_MISTRAL
     else DEFAULT_CLAUDE_GENERATION_CONFIG
 )
+ENABLE_BEDROCK_CROSS_REGION_INFERENCE = (
+    os.environ.get("ENABLE_BEDROCK_CROSS_REGION_INFERENCE", "false") == "true"
+)
 
 client = get_bedrock_runtime_client()
 
 
-class GuardrailConfig(TypedDict):
-    guardrailIdentifier: str
-    guardrailVersion: str
-    trace: str
-    streamProcessingMode: NotRequired[str]
+def _is_conversation_role(role: str) -> TypeGuard[ConversationRoleType]:
+    return role in ["user", "assistant"]
 
 
-class ConverseApiToolSpec(TypedDict):
-    name: str
-    description: str
-    inputSchema: dict
+def _is_nova_model(model: type_model_name) -> bool:
+    """Check if the model is an Amazon Nova model"""
+    return model in ["amazon-nova-pro", "amazon-nova-lite", "amazon-nova-micro"]
 
 
-class ConverseApiToolConfig(TypedDict):
-    tools: list[ConverseApiToolSpec]
-    toolChoice: dict
-
-
-class ConverseApiToolResultContent(TypedDict):
-    json: NotRequired[dict]
-    text: NotRequired[str]
-
-
-class ConverseApiToolResult(TypedDict):
-    toolUseId: str
-    content: ConverseApiToolResultContent
-    status: NotRequired[str]
-
-
-class ConverseApiRequest(TypedDict):
-    inference_config: dict
-    additional_model_request_fields: dict
-    model_id: str
-    messages: list[dict]
-    stream: bool
-    system: list[dict]
-    guardrailConfig: NotRequired[GuardrailConfig]
-    tool_config: NotRequired[ConverseApiToolConfig]
-
-
-class ConverseApiToolUseContent(TypedDict):
-    toolUseId: str
-    name: str
-    input: dict
-
-
-class ConverseApiResponseMessageContent(TypedDict):
-    text: NotRequired[str]
-    toolUse: NotRequired[ConverseApiToolUseContent]
-
-
-class ConverseApiResponseMessage(TypedDict):
-    content: list[ConverseApiResponseMessageContent]
-    role: str
-
-
-class ConverseApiResponseOutput(TypedDict):
-    message: ConverseApiResponseMessage
-
-
-class ConverseApiResponseUsage(TypedDict):
-    inputTokens: int
-    outputTokens: int
-    totalTokens: int
-
-
-class ConverseApiResponse(TypedDict):
-    ResponseMetadata: dict
-    output: ConverseApiResponseOutput
-    stopReason: str
-    usage: ConverseApiResponseUsage
-
-
-def compose_args(
-    messages: list[MessageModel],
-    model: type_model_name,
-    instruction: str | None = None,
-    stream: bool = False,
-    generation_params: GenerationParamsModel | None = None,
-) -> dict:
-    logger.warn(
-        "compose_args is deprecated. Use compose_args_for_converse_api instead."
-    )
-    return dict(
-        compose_args_for_converse_api(
-            messages, model, instruction, stream, generation_params
-        )
-    )
-
-
-def _get_converse_supported_format(ext: str) -> str:
-    supported_formats = {
-        "pdf": "pdf",
-        "csv": "csv",
-        "doc": "doc",
-        "docx": "docx",
-        "xls": "xls",
-        "xlsx": "xlsx",
-        "html": "html",
-        "txt": "txt",
-        "md": "md",
+def _prepare_nova_model_params(
+    model: type_model_name, generation_params: Optional[GenerationParamsModel] = None
+) -> Tuple[InferenceConfigurationTypeDef, Dict[str, Any]]:
+    """
+    Prepare inference configuration and additional model request fields for Nova models
+    > Note that Amazon Nova expects inference parameters as a JSON object under a inferenceConfig attribute. Amazon Nova also has an additional parameter "topK" that can be passed as an additional inference parameters. This parameter follows the same structure and is passed through the additionalModelRequestFields, as shown below.
+    https://docs.aws.amazon.com/nova/latest/userguide/getting-started-converse.html
+    """
+    # Base inference configuration
+    inference_config: InferenceConfigurationTypeDef = {
+        "maxTokens": (
+            generation_params.max_tokens
+            if generation_params
+            else DEFAULT_GENERATION_CONFIG["max_tokens"]
+        ),
+        "temperature": (
+            generation_params.temperature
+            if generation_params
+            else DEFAULT_GENERATION_CONFIG["temperature"]
+        ),
+        "topP": (
+            generation_params.top_p
+            if generation_params
+            else DEFAULT_GENERATION_CONFIG["top_p"]
+        ),
     }
-    # If the extension is not supported, return "txt"
-    return supported_formats.get(ext, "txt")
 
+    # Additional model request fields specific to Nova models
+    additional_fields: Dict[str, Any] = {"inferenceConfig": {}}
 
-def _convert_to_valid_file_name(file_name: str) -> str:
-    # Note: The document file name can only contain alphanumeric characters,
-    # whitespace characters, hyphens, parentheses, and square brackets.
-    # The name can't contain more than one consecutive whitespace character.
-    file_name = re.sub(r"[^a-zA-Z0-9\s\-\(\)\[\]]", "", file_name)
-    file_name = re.sub(r"\s+", " ", file_name)
-    file_name = file_name.strip()
+    # Add top_k if specified in generation params
+    if generation_params and generation_params.top_k is not None:
+        additional_fields["inferenceConfig"]["topK"] = generation_params.top_k
 
-    return file_name
+    return inference_config, additional_fields
 
 
 def compose_args_for_converse_api(
-    messages: list[MessageModel],
+    messages: list[SimpleMessageModel],
     model: type_model_name,
-    instruction: str | None = None,
-    stream: bool = False,
+    instructions: list[str] = [],
     generation_params: GenerationParamsModel | None = None,
-    grounding_source: dict | None = None,
     guardrail: BedrockGuardrailsModel | None = None,
-) -> ConverseApiRequest:
-    def process_content(c: ContentModel, role: str):
+    grounding_source: GuardrailConverseContentBlockTypeDef | None = None,
+    tools: dict[str, AgentTool] | None = None,
+    stream: bool = True,
+) -> ConverseStreamRequestRequestTypeDef:
+    def process_content(c: ContentModel, role: str) -> list[ContentBlockTypeDef]:
         if c.content_type == "text":
-            if role == "user" and guardrail and guardrail.grounding_threshold > 0:
+            if (
+                role == "user"
+                and guardrail
+                and guardrail.grounding_threshold > 0
+                and grounding_source
+            ):
                 return [
                     {"guardContent": grounding_source},
                     {
@@ -165,43 +114,10 @@ def compose_args_for_converse_api(
                         }
                     },
                 ]
-            elif role == "assistant":
-                return [{"text": c.body if isinstance(c.body, str) else None}]
-            else:
-                return [{"text": c.body}]
-        elif c.content_type == "image":
-            # e.g. "image/png" -> "png"
-            format = c.media_type.split("/")[1] if c.media_type else "unknown"
-            return [
-                {
-                    "image": {
-                        "format": format,
-                        # decode base64 encoded image
-                        "source": {"bytes": base64.b64decode(c.body)},
-                    }
-                }
-            ]
-        elif c.content_type == "attachment":
-            return [
-                {
-                    "document": {
-                        # e.g. "document.txt" -> "txt"
-                        "format": _get_converse_supported_format(
-                            Path(c.file_name).suffix[1:]  # type: ignore
-                        ),
-                        # e.g. "document.txt" -> "document"
-                        "name": _convert_to_valid_file_name(
-                            Path(c.file_name).stem  # type: ignore
-                        ),
-                        # decode base64 encoded document
-                        "source": {"bytes": base64.b64decode(c.body)},
-                    }
-                }
-            ]
-        else:
-            raise NotImplementedError(f"Unsupported content type: {c.content_type}")
 
-    arg_messages = [
+        return c.to_contents_for_converse()
+
+    arg_messages: list[MessageTypeDef] = [
         {
             "role": message.role,
             "content": [
@@ -211,32 +127,58 @@ def compose_args_for_converse_api(
             ],
         }
         for message in messages
-        if message.role not in ["system", "instruction"]
+        if _is_conversation_role(message.role)
     ]
 
-    inference_config = {
-        **DEFAULT_GENERATION_CONFIG,
-        **(
-            {
-                "maxTokens": generation_params.max_tokens,
-                "temperature": generation_params.temperature,
-                "topP": generation_params.top_p,
-                "stopSequences": generation_params.stop_sequences,
-            }
-            if generation_params
-            else {}
-        ),
-    }
+    # Prepare model-specific parameters
+    if _is_nova_model(model):
+        # Special handling for Nova models
+        inference_config, additional_model_request_fields = _prepare_nova_model_params(
+            model, generation_params
+        )
+    else:
+        # Standard handling for non-Nova models
+        inference_config = {
+            "maxTokens": (
+                generation_params.max_tokens
+                if generation_params
+                else DEFAULT_GENERATION_CONFIG["max_tokens"]
+            ),
+            "temperature": (
+                generation_params.temperature
+                if generation_params
+                else DEFAULT_GENERATION_CONFIG["temperature"]
+            ),
+            "topP": (
+                generation_params.top_p
+                if generation_params
+                else DEFAULT_GENERATION_CONFIG["top_p"]
+            ),
+            "stopSequences": (
+                generation_params.stop_sequences
+                if generation_params
+                else DEFAULT_GENERATION_CONFIG.get("stop_sequences", [])
+            ),
+        }
+        additional_model_request_fields = {
+            "top_k": (
+                generation_params.top_k
+                if generation_params
+                else DEFAULT_GENERATION_CONFIG["top_k"]
+            )
+        }
 
-    additional_model_request_fields = {"top_k": inference_config.pop("top_k")}
-
-    args: ConverseApiRequest = {
-        "inference_config": convert_dict_keys_to_camel_case(inference_config),
-        "additional_model_request_fields": additional_model_request_fields,
-        "model_id": get_model_id(model),
+    # Construct the base arguments
+    args: ConverseStreamRequestRequestTypeDef = {
+        "inferenceConfig": inference_config,
+        "modelId": get_model_id(model),
         "messages": arg_messages,
-        "stream": stream,
-        "system": [{"text": instruction}] if instruction else [],
+        "system": [
+            {"text": instruction}
+            for instruction in instructions
+            if len(instruction) > 0
+        ],
+        "additionalModelRequestFields": additional_model_request_fields,
     }
 
     if guardrail and guardrail.guardrail_arn and guardrail.guardrail_version:
@@ -250,24 +192,25 @@ def compose_args_for_converse_api(
             # https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails-streaming.html
             args["guardrailConfig"]["streamProcessingMode"] = "async"
 
+    if tools:
+        args["toolConfig"] = {
+            "tools": [
+                {
+                    "toolSpec": tool.to_converse_spec(),
+                }
+                for tool in tools.values()
+            ],
+        }
+
     return args
 
 
-def call_converse_api(args: ConverseApiRequest) -> ConverseApiResponse:
+def call_converse_api(
+    args: ConverseStreamRequestRequestTypeDef,
+) -> ConverseResponseTypeDef:
     client = get_bedrock_runtime_client()
 
-    base_args = {
-        "modelId": args["model_id"],
-        "messages": args["messages"],
-        "inferenceConfig": args["inference_config"],
-        "system": args["system"],
-        "additionalModelRequestFields": args["additional_model_request_fields"],
-    }
-
-    if "guardrailConfig" in args:
-        base_args["guardrailConfig"] = args["guardrailConfig"]  # type: ignore
-
-    return client.converse(**base_args)
+    return client.converse(**args)
 
 
 def calculate_price(
@@ -290,25 +233,68 @@ def calculate_price(
     return input_price * input_tokens / 1000.0 + output_price * output_tokens / 1000.0
 
 
-def get_model_id(model: type_model_name) -> str:
+def get_model_id(
+    model: type_model_name,
+    enable_cross_region: bool = ENABLE_BEDROCK_CROSS_REGION_INFERENCE,
+    bedrock_region: str = BEDROCK_REGION,
+) -> str:
     # Ref: https://docs.aws.amazon.com/bedrock/latest/userguide/model-ids-arns.html
-    if model == "claude-v2":
-        return "anthropic.claude-v2:1"
-    elif model == "claude-instant-v1":
-        return "anthropic.claude-instant-v1"
-    elif model == "claude-v3-sonnet":
-        return "anthropic.claude-3-sonnet-20240229-v1:0"
-    elif model == "claude-v3-haiku":
-        return "anthropic.claude-3-haiku-20240307-v1:0"
-    elif model == "claude-v3-opus":
-        return "anthropic.claude-3-opus-20240229-v1:0"
-    elif model == "claude-v3.5-sonnet":
-        return "anthropic.claude-3-5-sonnet-20240620-v1:0"
-    elif model == "claude-v3.5-sonnet-v2":
-        return "anthropic.claude-3-5-sonnet-20241022-v2:0"
-    elif model == "mistral-7b-instruct":
-        return "mistral.mistral-7b-instruct-v0:2"
-    elif model == "mixtral-8x7b-instruct":
-        return "mistral.mixtral-8x7b-instruct-v0:1"
-    elif model == "mistral-large":
-        return "mistral.mistral-large-2402-v1:0"
+    base_model_ids = {
+        "claude-v2": "anthropic.claude-v2:1",
+        "claude-instant-v1": "anthropic.claude-instant-v1",
+        "claude-v3-sonnet": "anthropic.claude-3-sonnet-20240229-v1:0",
+        "claude-v3-haiku": "anthropic.claude-3-haiku-20240307-v1:0",
+        "claude-v3-opus": "anthropic.claude-3-opus-20240229-v1:0",
+        "claude-v3.5-sonnet": "anthropic.claude-3-5-sonnet-20240620-v1:0",
+        "claude-v3.5-sonnet-v2": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "claude-v3.5-haiku": "anthropic.claude-3-5-haiku-20241022-v1:0",
+        "mistral-7b-instruct": "mistral.mistral-7b-instruct-v0:2",
+        "mixtral-8x7b-instruct": "mistral.mixtral-8x7b-instruct-v0:1",
+        "mistral-large": "mistral.mistral-large-2402-v1:0",
+        # New Amazon Nova models
+        "amazon-nova-pro": "amazon.nova-pro-v1:0",
+        "amazon-nova-lite": "amazon.nova-lite-v1:0",
+        "amazon-nova-micro": "amazon.nova-micro-v1:0",
+    }
+
+    # Ref: https://docs.aws.amazon.com/bedrock/latest/userguide/cross-region-inference-support.html
+    cross_region_inference_models = {
+        "claude-v3-sonnet",
+        "claude-v3-haiku",
+        "claude-v3-opus",
+        "claude-v3.5-sonnet",
+        "claude-v3.5-sonnet-v2",
+        "claude-v3.5-haiku",
+        "amazon-nova-pro",
+        "amazon-nova-lite",
+        "amazon-nova-micro",
+    }
+
+    supported_region_prefixes = {
+        "us-east-1": "us",
+        "us-west-2": "us",
+        "eu-west-1": "eu",
+        "eu-central-1": "eu",
+        "eu-west-3": "eu",
+    }
+
+    base_model_id = base_model_ids.get(model)
+    if not base_model_id:
+        raise ValueError(f"Unsupported model: {model}")
+
+    model_id = base_model_id
+    if enable_cross_region and model in cross_region_inference_models:
+        region_prefix = supported_region_prefixes.get(bedrock_region)
+        if region_prefix:
+            model_id = f"{region_prefix}.{base_model_id}"
+            logger.info(
+                f"Using cross-region model ID: {model_id} for model '{model}' in region '{BEDROCK_REGION}'"
+            )
+        else:
+            logger.warning(
+                f"Region '{bedrock_region}' does not support cross-region inference for model '{model}'."
+            )
+    else:
+        logger.info(f"Using local model ID: {model_id} for model '{model}'")
+
+    return model_id

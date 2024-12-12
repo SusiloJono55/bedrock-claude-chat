@@ -29,32 +29,44 @@ import useBot from '../hooks/useBot';
 import useConversation from '../hooks/useConversation';
 import ButtonPopover from '../components/PopoverMenu';
 import PopoverItem from '../components/PopoverItem';
+import { ActiveModels } from '../@types/bot';
 
 import { copyBotUrl } from '../utils/BotUtils';
+import { toCamelCase } from '../utils/StringUtils';
 import { produce } from 'immer';
 import ButtonIcon from '../components/ButtonIcon';
 import StatusSyncBot from '../components/StatusSyncBot';
 import Alert from '../components/Alert';
 import useBotSummary from '../hooks/useBotSummary';
 import useModel from '../hooks/useModel';
-import { TextInputChatContent } from '../features/agent/components/TextInputChatContent';
-import { AgentState } from '../features/agent/xstates/agentThink';
+import {
+  AgentState,
+  AgentToolsProps,
+} from '../features/agent/xstates/agentThink';
+import { getRelatedDocumentsOfToolUse } from '../features/agent/utils/AgentUtils';
 import { SyncStatus } from '../constants';
 import { BottomHelper } from '../features/helper/components/BottomHelper';
 import { useIsWindows } from '../hooks/useIsWindows';
 import {
   DisplayMessageContent,
+  Model,
   PutFeedbackRequest,
-} from '../@types/conversation';
-import { convertThinkingLogToAgentToolProps } from '../features/agent/utils/AgentUtils';
+} from '../@types/conversation.ts';
+import { AVAILABLE_MODEL_KEYS } from '../constants/index'
+import usePostMessageStreaming from '../hooks/usePostMessageStreaming.ts';
 
-const MISTRAL_ENABLED: boolean =
-  import.meta.env.VITE_APP_ENABLE_MISTRAL === 'true';
+// Default model activation settings when no bot is selected
+const defaultActiveModels: ActiveModels = (() => {
+  return Object.fromEntries(
+    AVAILABLE_MODEL_KEYS.map((key: Model) => [toCamelCase(key), true])
+  ) as ActiveModels;
+})();
 
 const ChatPage: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { open: openSnackbar } = useSnackbar();
+  const { errorDetail } = usePostMessageStreaming();
 
   const {
     agentThinking,
@@ -73,7 +85,7 @@ const ChatPage: React.FC = () => {
     getPostedModel,
     loadingConversation,
     getShouldContinue,
-    getRelatedDocuments,
+    relatedDocuments,
     giveFeedback,
   } = useChat();
 
@@ -316,6 +328,7 @@ const ChatPage: React.FC = () => {
 
   const ChatMessageWithRelatedDocuments: React.FC<{
     chatContent: DisplayMessageContent;
+    isStreaming: boolean;
     onChangeMessageId?: (messageId: string) => void;
     onSubmit?: (messageId: string, content: string) => void;
     onSubmitFeedback?: (
@@ -324,42 +337,103 @@ const ChatPage: React.FC = () => {
     ) => void;
   }> = React.memo((props) => {
     const { chatContent: message } = props;
-    const relatedDocuments = (() => {
-      if (message.usedChunks) {
-        // usedChunks is available for existing messages
-        return message.usedChunks.map((chunk) => ({
-          chunkBody: chunk.content,
-          contentType: chunk.contentType,
-          sourceLink: chunk.source,
-          rank: chunk.rank,
-        }));
-      } else {
-        // For new messages, get related documents from the api
-        return getRelatedDocuments(message.id);
-      }
-    })();
 
-    const isAgentThinking = [AgentState.THINKING, AgentState.LEAVING].some(
-      (v) => v == agentThinking.value
+    const isAgentThinking = useMemo(
+      () =>
+        [AgentState.THINKING, AgentState.LEAVING].some(
+          (v) => v === agentThinking.value
+        ),
+      []
     );
-    const tools = isAgentThinking
-      ? agentThinking.context.tools
-      : message.thinkingLog
-        ? convertThinkingLogToAgentToolProps(message.thinkingLog)
-        : undefined;
+
+    const tools: AgentToolsProps[] | undefined = useMemo(() => {
+      if (isAgentThinking) {
+        if (agentThinking.context.tools.length > 0) {
+          return agentThinking.context.tools;
+        }
+
+        if (bot?.hasAgent) {
+          return [
+            {
+              thought: t('agent.progress.label'),
+              tools: {},
+            },
+          ];
+        }
+
+        if (bot?.hasKnowledge) {
+          return [
+            {
+              thought: t('bot.label.retrievingKnowledge'),
+              tools: {},
+            },
+          ];
+        }
+
+        return undefined;
+      } else {
+        if (bot?.hasAgent) {
+          return undefined;
+        }
+
+        if (bot?.hasKnowledge) {
+          const pseudoToolUseId = message.id;
+          const relatedDocumentsOfVectorSearch = getRelatedDocumentsOfToolUse(
+            relatedDocuments,
+            pseudoToolUseId
+          );
+          if (
+            relatedDocumentsOfVectorSearch != null &&
+            relatedDocumentsOfVectorSearch.length > 0
+          ) {
+            return [
+              {
+                tools: {
+                  [pseudoToolUseId]: {
+                    name: 'knowledge_base_tool',
+                    status: 'success',
+                    input: {},
+                    relatedDocuments: relatedDocumentsOfVectorSearch,
+                  },
+                },
+              },
+            ];
+          }
+        }
+
+        return undefined;
+      }
+    }, [isAgentThinking, message]);
+
+    const relatedDocumentsForCitation = useMemo(
+      () =>
+        isAgentThinking
+          ? agentThinking.context.relatedDocuments
+          : relatedDocuments,
+      [isAgentThinking]
+    );
 
     return (
       <ChatMessage
-        isAgentThinking={isAgentThinking}
         tools={tools}
         chatContent={message}
-        relatedDocuments={relatedDocuments}
+        isStreaming={props.isStreaming}
+        relatedDocuments={relatedDocumentsForCitation}
         onChangeMessageId={props.onChangeMessageId}
         onSubmit={props.onSubmit}
         onSubmitFeedback={props.onSubmitFeedback}
       />
     );
   });
+
+  const activeModels = useMemo(() => {
+    if (!bot) {
+      return defaultActiveModels;
+    }
+    const isActiveModelsEmpty =
+      Object.keys(bot?.activeModels ?? {}).length === 0;
+    return isActiveModelsEmpty ? defaultActiveModels : bot.activeModels;
+  }, [bot]);
 
   return (
     <div
@@ -435,17 +509,16 @@ const ChatPage: React.FC = () => {
               {messages?.length === 0 ? (
                 <div className="relative flex w-full justify-center">
                   {!loadingConversation && (
-                    <SwitchBedrockModel className="mt-3 w-min" />
+                    <SwitchBedrockModel
+                      className="mt-3 w-min"
+                      activeModels={activeModels}
+                      botId={botId}
+                    />
                   )}
-                  <div className="absolute mx-3 my-20 flex items-center justify-center text-4xl font-bold text-gray">
-                    {!MISTRAL_ENABLED
-                      ? t('app.name')
-                      : t('app.nameWithoutClaude')}
-                  </div>
                 </div>
               ) : (
                 <>
-                  {messages?.map((message, idx) => (
+                  {messages?.map((message, idx, array) => (
                     <div
                       key={idx}
                       className={`${
@@ -453,6 +526,7 @@ const ChatPage: React.FC = () => {
                       }`}>
                       <ChatMessageWithRelatedDocuments
                         chatContent={message}
+                        isStreaming={postingMessage && idx + 1 === array.length}
                         onChangeMessageId={onChangeCurrentMessageId}
                         onSubmit={onSubmitEditedContent}
                         onSubmitFeedback={(messageId, feedback) => {
@@ -470,7 +544,7 @@ const ChatPage: React.FC = () => {
                 <div className="mb-12 mt-2 flex flex-col items-center">
                   <div className="flex items-center font-bold text-red">
                     <PiWarningCircleFill className="mr-1 text-2xl" />
-                    {t('error.answerResponse')}
+                    {errorDetail ?? t('error.answerResponse')}
                   </div>
 
                   <Button
@@ -491,7 +565,8 @@ const ChatPage: React.FC = () => {
         </section>
       </div>
 
-      <div className="bottom-0 z-0 flex w-full flex-col items-center justify-center">
+      <div
+        className={`bottom-0 z-0 flex w-full flex-col items-center justify-center ${messages.length === 0 ? 'absolute top-1/2 -translate-y-1/2' : ''}`}>
         {bot && bot.syncStatus !== SyncStatus.SUCCEEDED && (
           <div className="mb-8 w-1/2">
             <Alert
@@ -519,43 +594,26 @@ const ChatPage: React.FC = () => {
           </div>
         )}
 
-        {bot?.hasAgent ? (
-          <TextInputChatContent
-            disabledSend={postingMessage || hasError}
-            disabledRegenerate={postingMessage || hasError}
-            disabled={disabledInput}
-            placeholder={
-              disabledInput
-                ? t('bot.label.notAvailableBotInputMessage')
-                : undefined
-            }
-            canRegenerate={messages.length > 1}
-            isLoading={postingMessage}
-            onSend={onSend}
-            onRegenerate={onRegenerate}
-            ref={focusInputRef}
-          />
-        ) : (
-          <InputChatContent
-            dndMode={dndMode}
-            disabledSend={postingMessage || hasError}
-            disabledRegenerate={postingMessage || hasError}
-            disabledContinue={postingMessage || hasError}
-            disabled={disabledInput}
-            placeholder={
-              disabledInput
-                ? t('bot.label.notAvailableBotInputMessage')
-                : undefined
-            }
-            canRegenerate={messages.length > 1}
-            canContinue={getShouldContinue()}
-            isLoading={postingMessage}
-            onSend={onSend}
-            onRegenerate={onRegenerate}
-            continueGenerate={onContinueGenerate}
-            ref={focusInputRef}
-          />
-        )}
+        <InputChatContent
+          dndMode={dndMode}
+          disabledSend={postingMessage || hasError}
+          disabledRegenerate={postingMessage || hasError}
+          disabledContinue={postingMessage || hasError}
+          disabled={disabledInput}
+          placeholder={
+            disabledInput
+              ? t('bot.label.notAvailableBotInputMessage')
+              : undefined
+          }
+          canRegenerate={messages.length > 1}
+          canContinue={getShouldContinue()}
+          isLoading={postingMessage}
+          isNewChat={messages.length == 0}
+          onSend={onSend}
+          onRegenerate={onRegenerate}
+          continueGenerate={onContinueGenerate}
+          ref={focusInputRef}
+        />
       </div>
       <BottomHelper />
     </div>

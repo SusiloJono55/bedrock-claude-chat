@@ -1,4 +1,4 @@
-# Bedrock Claude Chat
+# Bedrock Claude Chat (Nova)
 
 > [!Warning]
 > **V2 がリリースされました。** 更新する際は、[移行ガイド](./migration/V1_TO_V2.md)を必ずご確認ください。 **注意を払わずに進めると、V1 の BOT は使用できなくなります。**
@@ -7,7 +7,6 @@
 
 ### 基本的な会話
 
-[Claude 3](https://www.anthropic.com/news/claude-3-family)によるテキストと画像の両方を利用したチャットが可能です。現在`Haiku`および`Sonnet`、または`Opus`をサポートしています。
 ![](./imgs/demo_ja.gif)
 
 ### ボットのカスタマイズ
@@ -34,7 +33,7 @@
 
 ## 🚀 まずはお試し
 
-- us-east-1 リージョンにて、[Bedrock Model access](https://us-east-1.console.aws.amazon.com/bedrock/home?region=us-east-1#/modelaccess) > `Manage model access` > `Anthropic / Claude 3 Haiku`, `Anthropic / Claude 3 Sonnet`, `Anthropic / Claude 3.5 Sonnet` `Cohere / Embed Multilingual`をチェックし、`Save changes`をクリックします
+- us-east-1 リージョンにて、[Bedrock Model access](https://us-east-1.console.aws.amazon.com/bedrock/home?region=us-east-1#/modelaccess) > `Manage model access` > すべての`Anthropic / Claude 3`、 すべての `Amazon / Nova`、`Cohere / Embed Multilingual`をチェックし、`Save changes`をクリックします
 
 <details>
 <summary>スクリーンショット</summary>
@@ -61,6 +60,7 @@ chmod +x bin.sh
 デプロイ時に以下のパラメータを指定することで、セキュリティとカスタマイズを強化できます。
 
 - **--disable-self-register**: セルフ登録を無効にします（デフォルト: 有効）。このフラグを設定すると、Cognito 上で全てのユーザーを作成する必要があり、ユーザーが自分でアカウントを登録することはできなくなります。
+- **--enable-lambda-snapstart**: [Lambda SnapStart](https://docs.aws.amazon.com/lambda/latest/dg/snapstart.html) を有効化します (デフォルト: 無効)。 このフラグを設定すると、Lambda 関数のコールドスタート時間を短縮し、レスポンスタイムの改善によってユーザー体験を向上させます。
 - **--ipv4-ranges**: 許可する IPv4 範囲のカンマ区切りリスト。（デフォルト: 全ての IPv4 アドレスを許可）
 - **--ipv6-ranges**: 許可する IPv6 範囲のカンマ区切りリスト。（デフォルト: 全ての IPv6 アドレスを許可）
 - **--disable-ipv6**: IPv6 での接続を無効にします (デフォルト: 有効)
@@ -146,6 +146,7 @@ cdk bootstrap aws://<account id>/ap-northeast-1
 
   - `bedrockRegion`: Bedrock が利用できるリージョン
   - `allowedIpV4AddressRanges`, `allowedIpV6AddressRanges`: 許可する IP アドレス範囲の指定
+  - `enableLambdaSnapStart`: デフォルトでは true ですが、[Python 関数の Lambda SnapStart をサポートしていないリージョン](https://docs.aws.amazon.com/lambda/latest/dg/snapstart.html#snapstart-supported-regions)にデプロイする場合は false に変更してください。
 
 - プロジェクトをデプロイします
 
@@ -249,6 +250,22 @@ cli および CDK を利用されている場合、`cdk destroy`を実行して�
 
 > [!Note]
 > 2024 年 6 月時点で、Amazon OpenSearch Serverless は 0.5 OCU をサポートし、小規模なワークロードのエントリーコストを削減しました。本番環境では 2 OCU から、開発/テスト環境では 1 OCU から利用可能です。負荷に応じて自動的にスケールします。詳細は[アナウンス](https://aws.amazon.com/jp/about-aws/whats-new/2024/06/amazon-opensearch-serverless-entry-cost-half-collection-types/)をご覧ください。
+
+### クロスリージョン推論
+
+[クロスリージョン推論](https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-support.html)を有効にすると、Amazon Bedrock はモデル推論リクエストを複数の AWS リージョン間で動的にルーティングし、ピーク時の需要に対してスループットとレジリエンスを向上させます。設定するには、`cdk.json`ファイルを編集し、以下のように指定します。
+
+```json
+"enableBedrockCrossRegionInference": true
+```
+
+### Lambda SnapStart
+
+[Lambda SnapStart](https://docs.aws.amazon.com/lambda/latest/dg/snapstart.html) は Lambda 関数のコールドスタート時間を短縮し、レスポンスタイムの改善によってユーザー体験を向上させます。ただし、Python 関数については[キャッシュサイズに比例した利用料金](https://aws.amazon.com/lambda/pricing/#SnapStart_Pricing)が発生するのに加え、[一部のリージョン](https://docs.aws.amazon.com/lambda/latest/dg/snapstart.html#snapstart-supported-regions)では現在利用できません。SnapStart を無効化するには、`cdk.json` を以下のように編集します。
+
+```json
+"enableLambdaSnapStart": false
+```
 
 ### ローカルでの開発について
 

@@ -22,6 +22,7 @@ from app.repositories.custom_bot import (
     update_knowledge_base_id,
 )
 from app.repositories.models.custom_bot import (
+    ActiveModelsModel,
     AgentModel,
     AgentToolModel,
     BotAliasModel,
@@ -33,6 +34,7 @@ from app.repositories.models.custom_bot_guardrails import BedrockGuardrailsModel
 from app.repositories.models.custom_bot_kb import (
     AnalyzerParamsModel,
     BedrockKnowledgeBaseModel,
+    FixedSizeParamsModel,
     OpenSearchParamsModel,
 )
 from app.repositories.models.custom_bot_kb import (
@@ -71,9 +73,13 @@ class TestCustomBotRepository(unittest.TestCase):
                     max_results=20,
                     search_type="hybrid",
                 ),
-                chunking_strategy="default",
-                max_tokens=2000,
-                overlap_percentage=0,
+                chunking_configuration=FixedSizeParamsModel(
+                    chunking_strategy="fixed_size",
+                    max_tokens=2000,
+                    overlap_percentage=0,
+                ),
+                parsing_model="anthropic.claude-3-sonnet-v1",
+                web_crawling_scope="DEFAULT",
             ),
             bedrock_guardrails=BedrockGuardrailsModel(
                 is_guardrail_enabled=True,
@@ -118,9 +124,13 @@ class TestCustomBotRepository(unittest.TestCase):
         self.assertEqual(bot.conversation_quick_starters[0].title, "QS title")
         self.assertEqual(bot.conversation_quick_starters[0].example, "QS example")
         self.assertEqual(bot.bedrock_knowledge_base.embeddings_model, "titan_v2")
-        self.assertEqual(bot.bedrock_knowledge_base.chunking_strategy, "default")
-        self.assertEqual(bot.bedrock_knowledge_base.max_tokens, 2000)
-        self.assertEqual(bot.bedrock_knowledge_base.overlap_percentage, 0)
+        self.assertEqual(
+            bot.bedrock_knowledge_base.chunking_configuration.max_tokens, 2000
+        )
+        self.assertEqual(
+            bot.bedrock_knowledge_base.chunking_configuration.overlap_percentage, 0
+        )
+
         self.assertEqual(
             bot.bedrock_knowledge_base.open_search.analyzer.character_filters,
             ["icu_normalizer"],
@@ -212,9 +222,9 @@ class TestCustomBotRepository(unittest.TestCase):
                     max_results=20,
                     search_type="hybrid",
                 ),
-                chunking_strategy="default",
-                max_tokens=2000,
-                overlap_percentage=0,
+                chunking_configuration=FixedSizeParamsModel(
+                    chunking_strategy="fixed_size",
+                ),
             ),
         )
         store_bot("user1", bot)
@@ -272,9 +282,11 @@ class TestCustomBotRepository(unittest.TestCase):
                     max_results=20,
                     search_type="hybrid",
                 ),
-                chunking_strategy="default",
-                max_tokens=2000,
-                overlap_percentage=0,
+                chunking_configuration=FixedSizeParamsModel(
+                    chunking_strategy="fixed_size",
+                    max_tokens=2500,
+                    overlap_percentage=20,
+                ),
             ),
             bedrock_guardrails=BedrockGuardrailsModel(
                 is_guardrail_enabled=True,
@@ -288,6 +300,7 @@ class TestCustomBotRepository(unittest.TestCase):
                 guardrail_arn="arn:aws:guardrail",
                 guardrail_version="v1",
             ),
+            active_models=ActiveModelsModel(),
         )
 
         bot = find_private_bot_by_id("user1", "1")
@@ -314,9 +327,12 @@ class TestCustomBotRepository(unittest.TestCase):
         self.assertEqual(bot.conversation_quick_starters[0].example, "QS example")
 
         self.assertEqual(bot.bedrock_knowledge_base.embeddings_model, "titan_v2")
-        self.assertEqual(bot.bedrock_knowledge_base.chunking_strategy, "default")
-        self.assertEqual(bot.bedrock_knowledge_base.max_tokens, 2000)
-        self.assertEqual(bot.bedrock_knowledge_base.overlap_percentage, 0)
+        self.assertEqual(
+            bot.bedrock_knowledge_base.chunking_configuration.max_tokens, 2500
+        )
+        self.assertEqual(
+            bot.bedrock_knowledge_base.chunking_configuration.overlap_percentage, 20
+        )
         self.assertEqual(
             bot.bedrock_knowledge_base.open_search.analyzer.character_filters,
             ["icu_normalizer"],
@@ -374,6 +390,7 @@ class TestFindAllBots(unittest.IsolatedAsyncioTestCase):
             conversation_quick_starters=[
                 ConversationQuickStarterModel(title="QS title", example="QS example")
             ],
+            active_models=ActiveModelsModel(),
         )
         alias2 = BotAliasModel(
             id="alias2",
@@ -390,6 +407,7 @@ class TestFindAllBots(unittest.IsolatedAsyncioTestCase):
             conversation_quick_starters=[
                 ConversationQuickStarterModel(title="QS title", example="QS example")
             ],
+            active_models=ActiveModelsModel(),
         )
         store_bot("user1", bot1)
         store_bot("user1", bot2)
@@ -457,6 +475,7 @@ class TestUpdateBotVisibility(unittest.TestCase):
             conversation_quick_starters=[
                 ConversationQuickStarterModel(title="QS title", example="QS example")
             ],
+            active_models=ActiveModelsModel(),
         )
         store_bot("user1", bot1)
         store_bot("user1", bot2)
@@ -493,6 +512,7 @@ class TestUpdateBotVisibility(unittest.TestCase):
             sync_status_reason="",
             display_retrieved_chunks=True,
             conversation_quick_starters=[],
+            active_models=ActiveModelsModel(),
         )
         bots = fetch_all_bots_by_user_id("user1", limit=3)
         self.assertEqual(len(bots), 3)

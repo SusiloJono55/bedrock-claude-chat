@@ -23,32 +23,22 @@ def snake_to_camel(snake_str):
     return components[0] + "".join(x.title() for x in components[1:])
 
 
-def convert_dict_keys_to_camel_case(snake_dict):
-    camel_dict = {}
-    for key, value in snake_dict.items():
-        new_key = snake_to_camel(key)
-        if isinstance(value, dict):
-            value = convert_dict_keys_to_camel_case(value)
-        camel_dict[new_key] = value
-    return camel_dict
-
-
 def is_running_on_lambda():
     return "AWS_EXECUTION_ENV" in os.environ
 
 
 def get_bedrock_client(region=BEDROCK_REGION):
-    client = boto3.client("bedrock", region)
+    client = boto3.client("bedrock", region_name=region)
     return client
 
 
 def get_bedrock_runtime_client(region=BEDROCK_REGION):
-    client = boto3.client("bedrock-runtime", region)
+    client = boto3.client("bedrock-runtime", region_name=region)
     return client
 
 
 def get_bedrock_agent_client(region=BEDROCK_REGION):
-    client = boto3.client("bedrock-agent-runtime", region)
+    client = boto3.client("bedrock-agent-runtime", region_name=region)
     return client
 
 
@@ -63,7 +53,7 @@ def generate_presigned_url(
     content_type: str | None = None,
     expiration=3600,
     client_method: Literal["put_object", "get_object"] = "put_object",
-):
+) -> str:
     # See: https://github.com/boto/boto3/issues/421#issuecomment-1849066655
     client = boto3.client(
         "s3",
@@ -103,7 +93,7 @@ def compose_upload_document_s3_path(user_id: str, bot_id: str, filename: str) ->
 
 
 def delete_file_from_s3(bucket: str, key: str):
-    client = boto3.client("s3", BEDROCK_REGION)
+    client = boto3.client("s3", region_name=BEDROCK_REGION)
 
     # Check if the file exists
     try:
@@ -120,7 +110,7 @@ def delete_file_from_s3(bucket: str, key: str):
 
 def delete_files_with_prefix_from_s3(bucket: str, prefix: str):
     """Delete all objects with the given prefix from the given bucket."""
-    client = boto3.client("s3", BEDROCK_REGION)
+    client = boto3.client("s3", region_name=BEDROCK_REGION)
     response = client.list_objects_v2(Bucket=bucket, Prefix=prefix)
 
     if "Contents" not in response:
@@ -131,7 +121,7 @@ def delete_files_with_prefix_from_s3(bucket: str, prefix: str):
 
 
 def check_if_file_exists_in_s3(bucket: str, key: str):
-    client = boto3.client("s3", BEDROCK_REGION)
+    client = boto3.client("s3", region_name=BEDROCK_REGION)
 
     # Check if the file exists
     try:
@@ -146,7 +136,7 @@ def check_if_file_exists_in_s3(bucket: str, key: str):
 
 
 def move_file_in_s3(bucket: str, key: str, new_key: str):
-    client = boto3.client("s3", BEDROCK_REGION)
+    client = boto3.client("s3", region_name=BEDROCK_REGION)
 
     # Check if the file exists
     try:

@@ -48,7 +48,7 @@ export const EDGE_MISTRAL_GENERATION_PARAMS = {
 
 export const DEFAULT_GENERATION_CONFIG: GenerationParams = {
   maxTokens: 2000,
-  topK: 250,
+  topK: 128,
   topP: 0.999,
   temperature: 0.6,
   stopSequences: ['Human: ', 'Assistant: '],
@@ -80,11 +80,11 @@ export type Direction =
 export const PostStreamingStatus = {
   START: 'START',
   BODY: 'BODY',
-  FETCHING_KNOWLEDGE: 'FETCHING_KNOWLEDGE',
   STREAMING: 'STREAMING',
   STREAMING_END: 'STREAMING_END',
   AGENT_THINKING: 'AGENT_THINKING',
   AGENT_TOOL_RESULT: 'AGENT_TOOL_RESULT',
+  AGENT_RELATED_DOCUMENT: 'AGENT_RELATED_DOCUMENT',
   ERROR: 'ERROR',
   END: 'END',
 } as const;
@@ -100,3 +100,18 @@ export const GUARDRAILS_CONTECTUAL_GROUNDING_THRESHOLD = {
   MIN: 0,
   STEP: 0.01,
 };
+
+export const AVAILABLE_MODEL_KEYS = [
+  'claude-v3-opus',
+  'claude-v3-sonnet',
+  'claude-v3.5-sonnet',
+  'claude-v3.5-sonnet-v2',
+  'claude-v3-haiku',
+  'claude-v3.5-haiku',
+  'mistral-7b-instruct',
+  'mixtral-8x7b-instruct',
+  'mistral-large',
+  'amazon-nova-pro',
+  'amazon-nova-lite',
+  'amazon-nova-micro',
+] as const;

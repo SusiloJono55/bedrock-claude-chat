@@ -51,12 +51,16 @@ BEDROCK_PRICING = {
             "output": 0.00240,
         },
         "claude-v3-haiku": {"input": 0.00025, "output": 0.00125},
+        "claude-v3.5-haiku": {"input": 0.001, "output": 0.005},
         "claude-v3-sonnet": {"input": 0.00300, "output": 0.01500},
         "claude-v3.5-sonnet": {"input": 0.00300, "output": 0.01500},
         "claude-v3.5-sonnet-v2": {"input": 0.00300, "output": 0.01500},
         "mistral-7b-instruct": {"input": 0.00015, "output": 0.0002},
         "mixtral-8x7b-instruct": {"input": 0.00045, "output": 0.0007},
         "mistral-large": {"input": 0.008, "output": 0.024},
+        "amazon-nova-pro": {"input": 0.0008, "output": 0.0032},
+        "amazon-nova-lite": {"input": 0.00006, "output": 0.00024},
+        "amazon-nova-micro": {"input": 0.000035, "output": 0.00014},
     },
     "us-west-2": {
         "claude-instant-v1": {
@@ -72,6 +76,9 @@ BEDROCK_PRICING = {
         "mistral-7b-instruct": {"input": 0.00015, "output": 0.0002},
         "mixtral-8x7b-instruct": {"input": 0.00045, "output": 0.0007},
         "mistral-large": {"input": 0.008, "output": 0.024},
+        "amazon-nova-pro": {"input": 0.0008, "output": 0.0032},
+        "amazon-nova-lite": {"input": 0.00006, "output": 0.00024},
+        "amazon-nova-micro": {"input": 0.000035, "output": 0.00014},
     },
     "ap-northeast-1": {
         "claude-instant-v1": {
@@ -93,6 +100,7 @@ BEDROCK_PRICING = {
             "output": 0.00240,
         },
         "claude-v3-haiku": {"input": 0.00025, "output": 0.00125},
+        "claude-v3.5-haiku": {"input": 0.001, "output": 0.005},
         "claude-v3-sonnet": {"input": 0.00300, "output": 0.01500},
         "claude-v3.5-sonnet": {"input": 0.00300, "output": 0.01500},
         "claude-v3.5-sonnet-v2": {"input": 0.00300, "output": 0.01500},
@@ -100,5 +108,8 @@ BEDROCK_PRICING = {
         "mistral-7b-instruct": {"input": 0.00015, "output": 0.0002},
         "mixtral-8x7b-instruct": {"input": 0.00045, "output": 0.0007},
         "mistral-large": {"input": 0.008, "output": 0.024},
+        "amazon-nova-pro": {"input": 0.0008, "output": 0.0032},
+        "amazon-nova-lite": {"input": 0.00006, "output": 0.00024},
+        "amazon-nova-micro": {"input": 0.000035, "output": 0.00014},
     },
 }

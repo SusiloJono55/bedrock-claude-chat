@@ -20,6 +20,7 @@ import { TIdentityProvider, identityProvider } from "./utils/identity-provider";
 import { ApiPublishCodebuild } from "./constructs/api-publish-codebuild";
 import { WebAclForPublishedApi } from "./constructs/webacl-for-published-api";
 import * as s3deploy from "aws-cdk-lib/aws-s3-deployment";
+import * as logs from "aws-cdk-lib/aws-logs";
 import * as path from "path";
 import { BedrockCustomBotCodebuild } from "./constructs/bedrock-custom-bot-codebuild";
 import { FE } from "./constructs/fe";
@@ -38,6 +39,8 @@ export interface BedrockChatStackProps extends StackProps {
   readonly enableIpV6: boolean;
   readonly documentBucket: Bucket;
   readonly useStandbyReplicas: boolean;
+  readonly enableBedrockCrossRegionInference: boolean;
+  readonly enableLambdaSnapStart: boolean;
 }
 
 export class BedrockChatStack extends cdk.Stack {
@@ -98,6 +101,7 @@ export class BedrockChatStack extends cdk.Stack {
         }),
       ],
       destinationBucket: sourceBucket,
+      logRetention: logs.RetentionDays.THREE_MONTHS,
     });
     // CodeBuild used for api publication
     const apiPublishCodebuild = new ApiPublishCodebuild(
@@ -171,6 +175,7 @@ export class BedrockChatStack extends cdk.Stack {
       usageAnalysis,
       largeMessageBucket,
       enableMistral: props.enableMistral,
+      enableLambdaSnapStart: props.enableLambdaSnapStart,
     });
     props.documentBucket.grantReadWrite(backendApi.handler);
 
@@ -185,6 +190,9 @@ export class BedrockChatStack extends cdk.Stack {
       largeMessageBucket,
       documentBucket: props.documentBucket,
       enableMistral: props.enableMistral,
+      enableBedrockCrossRegionInference:
+        props.enableBedrockCrossRegionInference,
+      enableLambdaSnapStart: props.enableLambdaSnapStart,
     });
     frontend.buildViteApp({
       backendApiEndpoint: backendApi.api.apiEndpoint,

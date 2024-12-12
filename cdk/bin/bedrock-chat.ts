@@ -5,6 +5,7 @@ import { BedrockChatStack } from "../lib/bedrock-chat-stack";
 import { BedrockRegionResourcesStack } from "../lib/bedrock-region-resources";
 import { FrontendWafStack } from "../lib/frontend-waf-stack";
 import { TIdentityProvider } from "../lib/utils/identity-provider";
+import { LogRetentionChecker } from "../rules/log-retention-checker";
 
 const app = new cdk.App();
 
@@ -39,6 +40,10 @@ const SELF_SIGN_UP_ENABLED: boolean =
   app.node.tryGetContext("selfSignUpEnabled");
 const USE_STAND_BY_REPLICAS: boolean =
   app.node.tryGetContext("enableRagReplicas");
+const ENABLE_BEDROCK_CROSS_REGION_INFERENCE: boolean = app.node.tryGetContext(
+  "enableBedrockCrossRegionInference"
+);
+const ENABLE_LAMBDA_SNAPSTART: boolean = app.node.tryGetContext("enableLambdaSnapStart");
 
 // WAF for frontend
 // 2023/9: Currently, the WAF for CloudFront needs to be created in the North America region (us-east-1), so the stacks are separated
@@ -89,6 +94,10 @@ const chat = new BedrockChatStack(app, `BedrockChatStack`, {
   selfSignUpEnabled: SELF_SIGN_UP_ENABLED,
   documentBucket: bedrockRegionResources.documentBucket,
   useStandbyReplicas: USE_STAND_BY_REPLICAS,
+  enableBedrockCrossRegionInference: ENABLE_BEDROCK_CROSS_REGION_INFERENCE,
+  enableLambdaSnapStart: ENABLE_LAMBDA_SNAPSTART,
 });
 chat.addDependency(waf);
 chat.addDependency(bedrockRegionResources);
+
+cdk.Aspects.of(chat).add(new LogRetentionChecker());

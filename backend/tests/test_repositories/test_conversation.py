@@ -1,11 +1,14 @@
+import base64
+import json
+import os
 import sys
 import unittest
+from unittest.mock import MagicMock, patch
 
 sys.path.append(".")
 
 
 from app.repositories.conversation import (
-    ContentModel,
     ConversationModel,
     MessageModel,
     RecordNotFoundError,
@@ -23,13 +26,16 @@ from app.repositories.custom_bot import (
     store_bot,
 )
 from app.repositories.models.conversation import (
-    AgentContentModel,
-    AgentMessageModel,
-    AgentToolUseContentModel,
     ChunkModel,
     FeedbackModel,
+    ImageContentModel,
+    SimpleMessageModel,
+    TextContentModel,
+    ToolUseContentModel,
+    ToolUseContentModelBody,
 )
 from app.repositories.models.custom_bot import (
+    ActiveModelsModel,
     AgentModel,
     AgentToolModel,
     BotModel,
@@ -49,7 +55,7 @@ from botocore.exceptions import ClientError
 #             message_map={
 #                 "a": MessageModel(
 #                     role="user",
-#                     content=ContentModel(content_type="text", body="Hello"),
+#                     content=TextContentModel(content_type="text", body="Hello"),
 #                     model="model",
 #                     children=["x", "y"],
 #                     parent="z",
@@ -67,7 +73,7 @@ from botocore.exceptions import ClientError
 #             message_map={
 #                 "a": MessageModel(
 #                     role="user",
-#                     content=ContentModel(content_type="text", body="Hello"),
+#                     content=TextContentModel(content_type="text", body="Hello"),
 #                     model="model",
 #                     children=["x", "y"],
 #                     parent="z",
@@ -121,6 +127,33 @@ from botocore.exceptions import ClientError
 
 
 class TestConversationRepository(unittest.TestCase):
+    def setUp(self):
+        self.patcher1 = patch("boto3.resource")
+        self.patcher2 = patch("app.repositories.conversation.s3_client")
+        self.mock_boto3_resource = self.patcher1.start()
+        self.mock_s3_client = self.patcher2.start()
+
+        self.mock_table = MagicMock()
+        self.mock_boto3_resource.return_value.Table.return_value = self.mock_table
+
+        # Set up environment variables
+        os.environ["CONVERSATION_TABLE_NAME"] = "test-table"
+        os.environ["CONVERSATION_BUCKET_NAME"] = "test-bucket"
+        os.environ["LARGE_MESSAGE_BUCKET"] = "test-large-message-bucket"
+        os.environ["BEDROCK_REGION"] = "us-east-1"
+
+        self.title_updated = False
+        self.feedback_updated = False
+        self.conversation_deleted = False
+
+    def tearDown(self):
+        self.patcher1.stop()
+        self.patcher2.stop()
+        os.environ.pop("CONVERSATION_TABLE_NAME", None)
+        os.environ.pop("CONVERSATION_BUCKET_NAME", None)
+        os.environ.pop("LARGE_MESSAGE_BUCKET", None)
+        os.environ.pop("BEDROCK_REGION", None)
+
     def test_store_and_find_conversation(self):
         conversation = ConversationModel(
             id="1",
@@ -131,17 +164,16 @@ class TestConversationRepository(unittest.TestCase):
                 "a": MessageModel(
                     role="user",
                     content=[
-                        ContentModel(
+                        TextContentModel(
                             content_type="text",
                             body="Hello",
-                            media_type=None,
-                            file_name=None,
                         ),
-                        ContentModel(
+                        ImageContentModel(
                             content_type="image",
-                            body="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+                            body=base64.b64decode(
+                                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+                            ),
                             media_type="image/png",
-                            file_name=None,
                         ),
                     ],
                     model="claude-instant-v1",
@@ -158,12 +190,12 @@ class TestConversationRepository(unittest.TestCase):
                         ),
                     ],
                     thinking_log=[
-                        AgentMessageModel(
+                        SimpleMessageModel(
                             role="agent",
                             content=[
-                                AgentContentModel(
+                                ToolUseContentModel(
                                     content_type="toolUse",
-                                    body=AgentToolUseContentModel(
+                                    body=ToolUseContentModelBody(
                                         tool_use_id="xyz1234",
                                         name="internet_search",
                                         input={
@@ -183,6 +215,66 @@ class TestConversationRepository(unittest.TestCase):
             should_continue=False,
         )
 
+        # Mock the responses
+        self.mock_table.put_item.return_value = {
+            "ResponseMetadata": {"HTTPStatusCode": 200}
+        }
+
+        def mock_query_side_effect(**kwargs):
+            if self.conversation_deleted:
+                return {"Items": []}
+
+            if "IndexName" in kwargs and kwargs["IndexName"] == "SKIndex":
+                message_map = conversation.model_dump()["message_map"]
+                if self.feedback_updated:
+                    message_map["a"]["feedback"] = {
+                        "thumbs_up": True,
+                        "category": "Good",
+                        "comment": "The response is pretty good.",
+                    }
+                return {
+                    "Items": [
+                        {
+                            "PK": "user",
+                            "SK": "user#CONV#1",
+                            "Title": (
+                                "Updated title"
+                                if self.title_updated
+                                else "Test Conversation"
+                            ),
+                            "CreateTime": 1627984879.9,
+                            "TotalPrice": 100,
+                            "LastMessageId": "x",
+                            "MessageMap": json.dumps(message_map),
+                            "IsLargeMessage": False,
+                            "ShouldContinue": False,
+                        }
+                    ]
+                }
+            return {
+                "Items": (
+                    []
+                    if self.conversation_deleted
+                    else [
+                        {
+                            "PK": "user",
+                            "SK": "user#CONV#1",
+                            "Title": "Test Conversation",
+                            "CreateTime": 1627984879.9,
+                            "TotalPrice": 100,
+                            "LastMessageId": "x",
+                            "MessageMap": json.dumps(
+                                conversation.model_dump()["message_map"]
+                            ),
+                            "IsLargeMessage": False,
+                            "ShouldContinue": False,
+                        }
+                    ]
+                )
+            }
+
+        self.mock_table.query.side_effect = mock_query_side_effect
+
         # Test storing conversation
         response = store_conversation("user", conversation)
         self.assertIsNotNone(response)
@@ -196,6 +288,8 @@ class TestConversationRepository(unittest.TestCase):
             user_id="user", conversation_id="1"
         )
         self.assertEqual(found_conversation.id, "1")
+        self.assertEqual(found_conversation.title, "Test Conversation")
+
         message_map = found_conversation.message_map
         # Assert whether the message map is correctly reconstructed
         self.assertEqual(message_map["a"].role, "user")
@@ -208,7 +302,6 @@ class TestConversationRepository(unittest.TestCase):
             content[1].body,
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
         )
-        self.assertEqual(content[1].media_type, "image/png")
         self.assertEqual(message_map["a"].model, "claude-instant-v1")
         self.assertEqual(message_map["a"].children, ["x", "y"])
         self.assertEqual(message_map["a"].parent, "z")
@@ -228,11 +321,17 @@ class TestConversationRepository(unittest.TestCase):
         self.assertEqual(
             message_map["a"].thinking_log[0].content[0].body.name, "internet_search"  # type: ignore
         )
+        self.assertEqual(found_conversation.message_map["a"].content[0].body, "Hello")
         self.assertEqual(
             message_map["a"].thinking_log[0].content[0].body.input["query"], "Google news"  # type: ignore
         )
 
         # Test update title
+        self.title_updated = True
+        self.mock_table.update_item.return_value = {
+            "Attributes": {"Title": "Updated title"},
+            "ResponseMetadata": {"HTTPStatusCode": 200},
+        }
         response = change_conversation_title(
             user_id="user",
             conversation_id="1",
@@ -245,6 +344,7 @@ class TestConversationRepository(unittest.TestCase):
 
         # Test give a feedback
         self.assertIsNone(found_conversation.message_map["a"].feedback)
+        self.feedback_updated = True
         response = update_feedback(
             user_id="user",
             conversation_id="1",
@@ -263,6 +363,7 @@ class TestConversationRepository(unittest.TestCase):
         self.assertEqual(feedback.comment, "The response is pretty good.")  # type: ignore
 
         # Test deleting conversation by id
+        self.conversation_deleted = True
         delete_conversation_by_id(user_id="user", conversation_id="1")
         with self.assertRaises(RecordNotFoundError):
             find_conversation_by_id("user", "1")
@@ -279,12 +380,10 @@ class TestConversationRepository(unittest.TestCase):
             f"msg_{i}": MessageModel(
                 role="user",
                 content=[
-                    ContentModel(
+                    TextContentModel(
                         content_type="text",
                         body="This is a large message."
                         * 1000,  # Repeating to make it large
-                        media_type=None,
-                        file_name=None,
                     )
                 ],
                 model="claude-instant-v1",
@@ -295,7 +394,7 @@ class TestConversationRepository(unittest.TestCase):
                 used_chunks=None,
                 thinking_log=None,
             )
-            for i in range(10)  # Create 10 large messages
+            for i in range(10)
         }
 
         large_conversation = ConversationModel(
@@ -309,7 +408,80 @@ class TestConversationRepository(unittest.TestCase):
             should_continue=False,
         )
 
-        # Test storing large conversation with a small threshold
+        # Mock responses
+        self.mock_table.put_item.return_value = {
+            "ResponseMetadata": {"HTTPStatusCode": 200}
+        }
+        self.mock_s3_client.put_object.return_value = {
+            "ResponseMetadata": {"HTTPStatusCode": 200}
+        }
+
+        def mock_query_side_effect(**kwargs):
+            if self.conversation_deleted:
+                return {"Items": []}
+
+            if "IndexName" in kwargs and kwargs["IndexName"] == "SKIndex":
+                return {
+                    "Items": [
+                        {
+                            "PK": "user",
+                            "SK": "user#CONV#2",
+                            "Title": "Large Conversation",
+                            "CreateTime": 1627984879.9,
+                            "TotalPrice": 200,
+                            "LastMessageId": "msg_9",
+                            "IsLargeMessage": True,
+                            "LargeMessagePath": "user/2/message_map.json",
+                            "MessageMap": json.dumps(
+                                {
+                                    "system": {
+                                        "role": "system",
+                                        "content": [
+                                            {
+                                                "content_type": "text",
+                                                "body": "Hello",
+                                                "media_type": None,
+                                            }
+                                        ],
+                                        "model": "claude-instant-v1",
+                                        "children": [],
+                                        "parent": None,
+                                        "create_time": 1627984879.9,
+                                        "feedback": None,
+                                        "used_chunks": None,
+                                        "thinking_log": None,
+                                    }
+                                }
+                            ),
+                            "ShouldContinue": False,
+                        }
+                    ]
+                }
+            return {"Items": []}
+
+        self.mock_table.query.side_effect = mock_query_side_effect
+
+        message_map_json = json.dumps(
+            {
+                k: {
+                    "role": v.role,
+                    "content": [c.model_dump() for c in v.content],
+                    "model": v.model,
+                    "children": v.children,
+                    "parent": v.parent,
+                    "create_time": v.create_time,
+                    "feedback": v.feedback,
+                    "used_chunks": v.used_chunks,
+                    "thinking_log": v.thinking_log,
+                }
+                for k, v in large_message_map.items()
+            }
+        )
+        self.mock_s3_client.get_object.return_value = {
+            "Body": MagicMock(read=lambda: message_map_json.encode())
+        }
+
+        # Test storing large conversation
         response = store_conversation("user", large_conversation, threshold=1)
         self.assertIsNotNone(response)
 
@@ -323,25 +495,23 @@ class TestConversationRepository(unittest.TestCase):
         self.assertEqual(found_conversation.last_message_id, "msg_9")
         self.assertEqual(found_conversation.bot_id, None)
         self.assertEqual(found_conversation.should_continue, False)
-
-        message_map = found_conversation.message_map
-        self.assertEqual(len(message_map), 10)
+        self.assertEqual(len(found_conversation.message_map), 10)
 
         for i in range(10):
             message_id = f"msg_{i}"
-            self.assertIn(message_id, message_map)
-            message = message_map[message_id]
+            self.assertIn(message_id, found_conversation.message_map)
+            message = found_conversation.message_map[message_id]
             self.assertEqual(message.role, "user")
             self.assertEqual(len(message.content), 1)
             self.assertEqual(message.content[0].content_type, "text")
             self.assertEqual(message.content[0].body, "This is a large message." * 1000)
-            self.assertEqual(message.content[0].media_type, None)
             self.assertEqual(message.model, "claude-instant-v1")
             self.assertEqual(message.children, [])
             self.assertEqual(message.parent, None)
             self.assertEqual(message.create_time, 1627984879.9)
 
         # Test deleting large conversation
+        self.conversation_deleted = True
         delete_conversation_by_id(user_id="user", conversation_id="2")
         with self.assertRaises(RecordNotFoundError):
             find_conversation_by_id("user", "2")
@@ -353,8 +523,27 @@ class TestConversationRepository(unittest.TestCase):
 
 
 class TestConversationBotRepository(unittest.TestCase):
-    def setUp(self) -> None:
-        conversation1 = ConversationModel(
+    def setUp(self):
+        self.patcher = patch("boto3.resource")
+        self.mock_boto3_resource = self.patcher.start()
+
+        self.mock_table = MagicMock()
+        self.mock_boto3_resource.return_value.Table.return_value = self.mock_table
+
+        # Set up environment variables
+        os.environ["CONVERSATION_TABLE_NAME"] = "test-table"
+        os.environ["CONVERSATION_BUCKET_NAME"] = "test-bucket"
+
+        self.active_models = ActiveModelsModel(
+            claude3_sonnet_v1=True,
+            claude3_haiku_v1=True,
+            claude3_opus_v1=True,
+            claude3_5_sonnet_v1=True,
+            claude3_5_sonnet_v2=True,
+            claude3_5_haiku_v1=True,
+        )
+
+        self.conversation1 = ConversationModel(
             id="1",
             create_time=1627984879.9,
             title="Test Conversation",
@@ -363,17 +552,16 @@ class TestConversationBotRepository(unittest.TestCase):
                 "a": MessageModel(
                     role="user",
                     content=[
-                        ContentModel(
+                        TextContentModel(
                             content_type="text",
                             body="Hello",
-                            media_type=None,
-                            file_name=None,
                         ),
-                        ContentModel(
+                        ImageContentModel(
                             content_type="image",
-                            body="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+                            body=base64.b64decode(
+                                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+                            ),
                             media_type="image/png",
-                            file_name=None,
                         ),
                     ],
                     model="claude-instant-v1",
@@ -389,7 +577,8 @@ class TestConversationBotRepository(unittest.TestCase):
             bot_id=None,
             should_continue=False,
         )
-        conversation2 = ConversationModel(
+
+        self.conversation2 = ConversationModel(
             id="2",
             create_time=1627984879.9,
             title="Test Conversation",
@@ -398,17 +587,16 @@ class TestConversationBotRepository(unittest.TestCase):
                 "a": MessageModel(
                     role="user",
                     content=[
-                        ContentModel(
+                        TextContentModel(
                             content_type="text",
                             body="Hello",
-                            media_type=None,
-                            file_name=None,
                         ),
-                        ContentModel(
+                        ImageContentModel(
                             content_type="image",
-                            body="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+                            body=base64.b64decode(
+                                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+                            ),
                             media_type="image/png",
-                            file_name=None,
                         ),
                     ],
                     model="claude-instant-v1",
@@ -424,7 +612,8 @@ class TestConversationBotRepository(unittest.TestCase):
             bot_id="1",
             should_continue=False,
         )
-        bot1 = BotModel(
+
+        self.bot1 = BotModel(
             id="1",
             title="Test Bot",
             instruction="Test Bot Prompt",
@@ -465,8 +654,10 @@ class TestConversationBotRepository(unittest.TestCase):
             ],
             bedrock_knowledge_base=None,
             bedrock_guardrails=None,
+            active_models=self.active_models,
         )
-        bot2 = BotModel(
+
+        self.bot2 = BotModel(
             id="2",
             title="Test Bot",
             instruction="Test Bot Prompt",
@@ -507,25 +698,79 @@ class TestConversationBotRepository(unittest.TestCase):
             ],
             bedrock_knowledge_base=None,
             bedrock_guardrails=None,
+            active_models=self.active_models,  # Added the missing field
         )
 
-        store_conversation("user", conversation1)
-        store_bot("user", bot1)
-        store_bot("user", bot2)
-        store_conversation("user", conversation2)
+        store_conversation("user", self.conversation1)
+        store_bot("user", self.bot1)
+        store_bot("user", self.bot2)
+        store_conversation("user", self.conversation2)
+
+    def tearDown(self):
+        self.patcher.stop()
+        os.environ.pop("CONVERSATION_TABLE_NAME", None)
+        os.environ.pop("CONVERSATION_BUCKET_NAME", None)
 
     def test_only_conversation_is_fetched(self):
+        self.mock_table.query.return_value = {
+            "Items": [
+                {
+                    "PK": "user",
+                    "SK": "user#CONV#1",
+                    "Title": "Test Conversation",
+                    "CreateTime": 1627984879.9,
+                    "MessageMap": json.dumps(
+                        {
+                            "system": {
+                                "role": "system",
+                                "content": [
+                                    {
+                                        "content_type": "text",
+                                        "body": "Hello",
+                                        "media_type": None,
+                                    }
+                                ],
+                                "model": "claude-instant-v1",
+                                "children": [],
+                                "parent": None,
+                                "create_time": 1627984879.9,
+                                "feedback": None,
+                                "used_chunks": None,
+                                "thinking_log": None,
+                            }
+                        }
+                    ),
+                    "BotId": None,
+                }
+            ]
+        }
         conversations = find_conversation_by_user_id("user")
-        self.assertEqual(len(conversations), 2)
+        self.assertEqual(len(conversations), 1)
 
     def test_only_bot_is_fetched(self):
+        self.mock_table.query.return_value = {
+            "Items": [
+                {
+                    "PK": "user",
+                    "SK": "user#BOT#1",
+                    "Title": "Test Bot",
+                    "Description": "Test Bot Description",
+                    "CreateTime": 1627984879.9,
+                    "LastBotUsed": 1627984879.9,
+                    "IsPinned": False,
+                    "SyncStatus": "RUNNING",
+                    "BedrockKnowledgeBase": None,
+                }
+            ]
+        }
         bots = find_private_bots_by_user_id("user")
-        self.assertEqual(len(bots), 2)
+        self.assertEqual(len(bots), 1)
 
-    def tearDown(self) -> None:
-        delete_conversation_by_user_id("user")
-        delete_bot_by_id("user", "1")
-        delete_bot_by_id("user", "2")
+
+def tearDown(self) -> None:
+    delete_conversation_by_user_id("user")
+    delete_bot_by_id("user", "1")
+    delete_bot_by_id("user", "2")
 
 
 if __name__ == "__main__":

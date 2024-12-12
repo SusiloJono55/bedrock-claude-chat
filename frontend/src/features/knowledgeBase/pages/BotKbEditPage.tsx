@@ -13,8 +13,12 @@ import Alert from '../../../components/Alert';
 import KnowledgeFileUploader from '../../../components/KnowledgeFileUploader';
 import GenerationConfig from '../../../components/GenerationConfig';
 import Select from '../../../components/Select';
-import { BotFile, ConversationQuickStarter } from '../../../@types/bot';
-
+import {
+  BotFile,
+  ConversationQuickStarter,
+  ActiveModels,
+} from '../../../@types/bot';
+import { ParsingModel } from '../types';
 import { ulid } from 'ulid';
 import {
   EDGE_GENERATION_PARAMS,
@@ -32,10 +36,12 @@ import { useAgent } from '../../../features/agent/hooks/useAgent';
 import { AgentTool } from '../../../features/agent/types';
 import { AvailableTools } from '../../../features/agent/components/AvailableTools';
 import {
-  DEFAULT_CHUNKING_MAX_TOKENS,
-  DEFAULT_CHUNKING_OVERLAP_PERCENTAGE,
-  EDGE_CHUNKING_MAX_TOKENS,
-  EDGE_CHUNKING_OVERLAP_PERCENTAGE,
+  DEFAULT_FIXED_CHUNK_PARAMS,
+  DEFAULT_HIERARCHICAL_CHUNK_PARAMS,
+  DEFAULT_SEMANTIC_CHUNK_PARAMS,
+  EDGE_FIXED_CHUNK_PARAMS,
+  EDGE_HIERARCHICAL_CHUNK_PARAMS,
+  EDGE_SEMANTIC_CHUNK_PARAMS,
   EDGE_SEARCH_PARAMS,
   OPENSEARCH_ANALYZER,
   DEFAULT_SEARCH_CONFIG,
@@ -45,21 +51,31 @@ import {
   GUARDRAILS_FILTERS_THRESHOLD,
   GUARDRAILS_CONTECTUAL_GROUNDING_THRESHOLD,
 } from '../../../constants';
+import { Model } from '../../../@types/conversation';
+import { AVAILABLE_MODEL_KEYS } from '../../../constants/index'
 import {
   ChunkingStrategy,
+  FixedSizeParams,
+  HierarchicalParams,
+  SemanticParams,
   EmbeddingsModel,
   OpenSearchParams,
   SearchParams,
   SearchType,
+  WebCrawlingScope,
 } from '../types';
+import { toCamelCase } from '../../../utils/StringUtils';
+
+const MISTRAL_ENABLED: boolean =
+  import.meta.env.VITE_APP_ENABLE_MISTRAL === 'true';
 
 const edgeGenerationParams =
-  import.meta.env.VITE_APP_ENABLE_MISTRAL === 'true'
+  MISTRAL_ENABLED === true
     ? EDGE_MISTRAL_GENERATION_PARAMS
     : EDGE_GENERATION_PARAMS;
 
 const defaultGenerationConfig =
-  import.meta.env.VITE_APP_ENABLE_MISTRAL === 'true'
+  MISTRAL_ENABLED === true
     ? DEFAULT_MISTRAL_GENERATION_CONFIG
     : DEFAULT_GENERATION_CONFIG;
 
@@ -102,6 +118,8 @@ const BotKbEditPage: React.FC = () => {
       example: '',
     },
   ]);
+  const [webCrawlingScope, setWebCrawlingScope] =
+    useState<WebCrawlingScope>('DEFAULT');
 
   const [knowledgeBaseId, setKnowledgeBaseId] = useState<string | null>(null); // Send null when creating a new bot
   const [embeddingsModel, setEmbeddingsModel] =
@@ -116,6 +134,51 @@ const BotKbEditPage: React.FC = () => {
   const [relevanceThreshold, setRelevanceThreshold] = useState<number>(0);
   const [guardrailArn, setGuardrailArn] = useState<string>('');
   const [guardrailVersion, setGuardrailVersion] = useState<string>('');
+  const [parsingModel, setParsingModel] = useState<ParsingModel | undefined>(
+    undefined
+  );
+  const [webCrawlingFilters, setWebCrawlingFilters] = useState<{
+    includePatterns: string[];
+    excludePatterns: string[];
+  }>({
+    includePatterns: [''],
+    excludePatterns: [''],
+  });
+
+  const [activeModels, setActiveModels] = useState<ActiveModels>(() => {
+    const initialState = AVAILABLE_MODEL_KEYS.reduce((acc: ActiveModels, key: Model) => {
+      acc[toCamelCase(key) as keyof ActiveModels] = true;
+      return acc;
+    }, {} as ActiveModels);
+    return initialState;
+  });
+
+  const activeModelsOptions: {
+    key: Model;
+    label: string;
+    description: string;
+  }[] = (() => {
+    const getMistralModels = () =>
+      AVAILABLE_MODEL_KEYS.filter(
+        (key) => key.includes('mistral') || key.includes('mixtral')
+      ).map((key) => ({
+        key: key as Model,
+        label: t(`model.${key}.label`) as string,
+        description: t(`model.${key}.description`) as string,
+      }));
+
+    const getClaudeAndNovaModels = () => {
+      return AVAILABLE_MODEL_KEYS.filter(
+        (key) => key.includes('claude') || key.includes('nova')
+      ).map((key) => ({
+        key: key as Model,
+        label: t(`model.${key}.label`) as string,
+        description: t(`model.${key}.description`) as string,
+      }));
+    };
+
+    return MISTRAL_ENABLED ? getMistralModels() : getClaudeAndNovaModels();
+  })();
 
   const embeddingsModelOptions: {
     label: string;
@@ -136,6 +199,40 @@ const BotKbEditPage: React.FC = () => {
   const [chunkingStrategy, setChunkingStrategy] =
     useState<ChunkingStrategy>('default');
 
+  const webCrawlingScopeOptions: {
+    label: string;
+    value: WebCrawlingScope;
+    description: string;
+  }[] = [
+    {
+      label: t(
+        'knowledgeBaseSettings.webCrawlerConfig.crawlingScope.default.label'
+      ),
+      value: 'DEFAULT',
+      description: t(
+        'knowledgeBaseSettings.webCrawlerConfig.crawlingScope.default.hint'
+      ),
+    },
+    {
+      label: t(
+        'knowledgeBaseSettings.webCrawlerConfig.crawlingScope.subdomains.label'
+      ),
+      value: 'SUBDOMAINS',
+      description: t(
+        'knowledgeBaseSettings.webCrawlerConfig.crawlingScope.subdomains.hint'
+      ),
+    },
+    {
+      label: t(
+        'knowledgeBaseSettings.webCrawlerConfig.crawlingScope.hostOnly.label'
+      ),
+      value: 'HOST_ONLY',
+      description: t(
+        'knowledgeBaseSettings.webCrawlerConfig.crawlingScope.hostOnly.hint'
+      ),
+    },
+  ];
+
   const chunkingStrategyOptions: {
     label: string;
     value: ChunkingStrategy;
@@ -152,18 +249,60 @@ const BotKbEditPage: React.FC = () => {
       description: t('knowledgeBaseSettings.chunkingStrategy.fixed_size.hint'),
     },
     {
+      label: t('knowledgeBaseSettings.chunkingStrategy.hierarchical.label'),
+      value: 'hierarchical',
+      description: t(
+        'knowledgeBaseSettings.chunkingStrategy.hierarchical.hint'
+      ),
+    },
+    {
+      label: t('knowledgeBaseSettings.chunkingStrategy.semantic.label'),
+      value: 'semantic',
+      description: t('knowledgeBaseSettings.chunkingStrategy.semantic.hint'),
+    },
+    {
       label: t('knowledgeBaseSettings.chunkingStrategy.none.label'),
       value: 'none',
       description: t('knowledgeBaseSettings.chunkingStrategy.none.hint'),
     },
   ];
 
-  const [chunkingMaxTokens, setChunkingMaxTokens] = useState<number>(
-    DEFAULT_CHUNKING_MAX_TOKENS
+  const parsingModelOptions: {
+    label: string;
+    value: ParsingModel;
+    description: string;
+  }[] = [
+    {
+      label: t('knowledgeBaseSettings.parsingModel.none.label'),
+      value: 'disabled',
+      description: t('knowledgeBaseSettings.parsingModel.none.hint'),
+    },
+    {
+      label: t('knowledgeBaseSettings.parsingModel.claude_3_sonnet_v1.label'),
+      value: 'anthropic.claude-3-sonnet-v1',
+      description: t(
+        'knowledgeBaseSettings.parsingModel.claude_3_sonnet_v1.hint'
+      ),
+    },
+    {
+      label: t('knowledgeBaseSettings.parsingModel.claude_3_haiku_v1.label'),
+      value: 'anthropic.claude-3-haiku-v1',
+      description: t(
+        'knowledgeBaseSettings.parsingModel.claude_3_haiku_v1.hint'
+      ),
+    },
+  ];
+
+  const [fixedSizeParams, setFixedSizeParams] = useState<FixedSizeParams>(
+    DEFAULT_FIXED_CHUNK_PARAMS
   );
 
-  const [chunkingOverlapPercentage, setChunkingOverlapPercentage] =
-    useState<number>(DEFAULT_CHUNKING_OVERLAP_PERCENTAGE);
+  const [hierarchicalParams, setHierarchicalParams] =
+    useState<HierarchicalParams>(DEFAULT_HIERARCHICAL_CHUNK_PARAMS);
+
+  const [semanticParams, setSemanticParams] = useState<SemanticParams>(
+    DEFAULT_SEMANTIC_CHUNK_PARAMS
+  );
 
   const [analyzer, setAnalyzer] = useState<string>(
     DEFAULT_OPENSEARCH_ANALYZER[i18n.language] ?? 'none'
@@ -238,6 +377,72 @@ const BotKbEditPage: React.FC = () => {
     return isNewBot ? ulid() : (paramsBotId ?? '');
   }, [isNewBot, paramsBotId]);
 
+  const onChangeIncludePattern = useCallback(
+    (pattern: string, idx: number) => {
+      setWebCrawlingFilters(
+        produce(webCrawlingFilters, (draft) => {
+          draft.includePatterns[idx] = pattern;
+        })
+      );
+    },
+    [webCrawlingFilters]
+  );
+
+  const onClickAddIncludePattern = useCallback(() => {
+    setWebCrawlingFilters(
+      produce(webCrawlingFilters, (draft) => {
+        draft.includePatterns.push('');
+      })
+    );
+  }, [webCrawlingFilters]);
+
+  const onClickRemoveIncludePattern = useCallback(
+    (idx: number) => {
+      setWebCrawlingFilters(
+        produce(webCrawlingFilters, (draft) => {
+          draft.includePatterns.splice(idx, 1);
+          if (draft.includePatterns.length === 0) {
+            draft.includePatterns.push('');
+          }
+        })
+      );
+    },
+    [webCrawlingFilters]
+  );
+
+  const onChangeExcludePattern = useCallback(
+    (pattern: string, idx: number) => {
+      setWebCrawlingFilters(
+        produce(webCrawlingFilters, (draft) => {
+          draft.excludePatterns[idx] = pattern;
+        })
+      );
+    },
+    [webCrawlingFilters]
+  );
+
+  const onClickAddExcludePattern = useCallback(() => {
+    setWebCrawlingFilters(
+      produce(webCrawlingFilters, (draft) => {
+        draft.excludePatterns.push('');
+      })
+    );
+  }, [webCrawlingFilters]);
+
+  const onClickRemoveExcludePattern = useCallback(
+    (idx: number) => {
+      setWebCrawlingFilters(
+        produce(webCrawlingFilters, (draft) => {
+          draft.excludePatterns.splice(idx, 1);
+          if (draft.excludePatterns.length === 0) {
+            draft.excludePatterns.push('');
+          }
+        })
+      );
+    },
+    [webCrawlingFilters]
+  );
+
   useEffect(() => {
     if (!isNewBot) {
       setIsLoading(true);
@@ -288,14 +493,38 @@ const BotKbEditPage: React.FC = () => {
           );
           setKnowledgeBaseId(bot.bedrockKnowledgeBase.knowledgeBaseId);
           setEmbeddingsModel(bot.bedrockKnowledgeBase!.embeddingsModel);
-          setChunkingStrategy(bot.bedrockKnowledgeBase!.chunkingStrategy);
-          setChunkingMaxTokens(
-            bot.bedrockKnowledgeBase!.maxTokens ?? DEFAULT_CHUNKING_MAX_TOKENS
+          setChunkingStrategy(
+            bot.bedrockKnowledgeBase!.chunkingConfiguration.chunkingStrategy
           );
-          setChunkingOverlapPercentage(
-            bot.bedrockKnowledgeBase!.overlapPercentage ??
-              DEFAULT_CHUNKING_OVERLAP_PERCENTAGE
-          );
+          if (
+            bot.bedrockKnowledgeBase!.chunkingConfiguration.chunkingStrategy ==
+            'fixed_size'
+          ) {
+            setFixedSizeParams(
+              (bot.bedrockKnowledgeBase!
+                .chunkingConfiguration as FixedSizeParams) ??
+                DEFAULT_FIXED_CHUNK_PARAMS
+            );
+          } else if (
+            bot.bedrockKnowledgeBase!.chunkingConfiguration.chunkingStrategy ==
+            'hierarchical'
+          ) {
+            setHierarchicalParams(
+              (bot.bedrockKnowledgeBase!
+                .chunkingConfiguration as HierarchicalParams) ??
+                DEFAULT_HIERARCHICAL_CHUNK_PARAMS
+            );
+          } else if (
+            bot.bedrockKnowledgeBase!.chunkingConfiguration.chunkingStrategy ==
+            'semantic'
+          ) {
+            setSemanticParams(
+              (bot.bedrockKnowledgeBase!
+                .chunkingConfiguration as SemanticParams) ??
+                DEFAULT_SEMANTIC_CHUNK_PARAMS
+            );
+          }
+
           setOpenSearchParams(bot.bedrockKnowledgeBase!.openSearch);
           setSearchParams(bot.bedrockKnowledgeBase!.searchParams);
           setGuardrailArn(bot.bedrockGuardrails.guardrailArn);
@@ -339,6 +568,17 @@ const BotKbEditPage: React.FC = () => {
               ? bot.bedrockGuardrails.relevanceThreshold
               : 0
           );
+          setParsingModel(bot.bedrockKnowledgeBase.parsingModel);
+          setWebCrawlingScope(
+            bot.bedrockKnowledgeBase.webCrawlingScope ?? 'DEFAULT'
+          );
+          setWebCrawlingFilters({
+            includePatterns: bot.bedrockKnowledgeBase.webCrawlingFilters
+              ?.includePatterns || [''],
+            excludePatterns: bot.bedrockKnowledgeBase.webCrawlingFilters
+              ?.excludePatterns || [''],
+          });
+          setActiveModels(bot.activeModels);
         })
         .finally(() => {
           setIsLoading(false);
@@ -351,6 +591,15 @@ const BotKbEditPage: React.FC = () => {
     const pattern =
       /Got a larger chunk overlap \(\d+\) than chunk size \(\d+\), should be smaller\./;
     return pattern.test(syncErrorMessage);
+  }, []);
+
+  const onChangeActiveModels = useCallback((key: string, value: boolean) => {
+    setActiveModels((prevState) => {
+      const camelKey = toCamelCase(key) as keyof ActiveModels;
+      const newState = { ...prevState };
+      newState[camelKey] = value;
+      return newState;
+    });
   }, []);
 
   const onChangeS3Url = useCallback(
@@ -381,6 +630,36 @@ const BotKbEditPage: React.FC = () => {
       );
     },
     [s3Urls]
+  );
+
+  const onChangeUrls = useCallback(
+    (url: string, idx: number) => {
+      setUrls(
+        produce(urls, (draft) => {
+          draft[idx] = url;
+        })
+      );
+    },
+    [urls]
+  );
+
+  const onClickAddUrls = useCallback(() => {
+    setUrls([...urls, '']);
+  }, [urls]);
+
+  const onClickRemoveUrls = useCallback(
+    (idx: number) => {
+      setUrls(
+        produce(urls, (draft) => {
+          draft.splice(idx, 1);
+          if (draft.length === 0) {
+            draft.push('');
+          }
+          return;
+        })
+      );
+    },
+    [urls]
   );
 
   const removeUnchangedFilenames = useCallback(
@@ -517,12 +796,27 @@ const BotKbEditPage: React.FC = () => {
     (value: EmbeddingsModel) => {
       setEmbeddingsModel(value);
       // Update maxTokens based on the selected embeddings model
-      const maxEdge = EDGE_CHUNKING_MAX_TOKENS.MAX[value];
-      if (chunkingMaxTokens > maxEdge) {
-        setChunkingMaxTokens(maxEdge);
+      const maxEdgeFixed = EDGE_FIXED_CHUNK_PARAMS.maxTokens.MAX[value];
+      const maxEdgeSemantic = EDGE_SEMANTIC_CHUNK_PARAMS.maxTokens.MAX[value];
+      if (
+        chunkingStrategy == 'fixed_size' &&
+        fixedSizeParams.maxTokens > maxEdgeFixed
+      ) {
+        setFixedSizeParams((params) => ({
+          ...params,
+          maxTokens: maxEdgeFixed,
+        }));
+      } else if (
+        chunkingStrategy == 'semantic' &&
+        semanticParams.maxTokens > maxEdgeSemantic
+      ) {
+        setSemanticParams((params) => ({
+          ...params,
+          maxTokens: maxEdgeSemantic,
+        }));
       }
     },
-    [chunkingMaxTokens]
+    [chunkingStrategy, fixedSizeParams.maxTokens, semanticParams.maxTokens]
   );
 
   const onClickBack = useCallback(() => {
@@ -572,41 +866,189 @@ const BotKbEditPage: React.FC = () => {
 
     // Chunking Strategy params validation
     if (chunkingStrategy === 'fixed_size') {
-      if (chunkingMaxTokens < EDGE_CHUNKING_MAX_TOKENS.MIN) {
+      if (fixedSizeParams.maxTokens < EDGE_FIXED_CHUNK_PARAMS.maxTokens.MIN) {
         setErrorMessages(
-          'chunkingMaxTokens',
+          'fixedSizeParams.maxTokens',
           t('validation.minRange.message', {
-            size: EDGE_CHUNKING_MAX_TOKENS.MIN,
+            size: EDGE_FIXED_CHUNK_PARAMS.maxTokens.MIN,
           })
         );
         return false;
       } else if (
-        chunkingMaxTokens > EDGE_CHUNKING_MAX_TOKENS.MAX[embeddingsModel]
+        fixedSizeParams.maxTokens >
+        EDGE_FIXED_CHUNK_PARAMS.maxTokens.MAX[embeddingsModel]
       ) {
         setErrorMessages(
-          'chunkingMaxTokens',
+          'fixedSizeParams.maxTokens',
           t('validation.maxRange.message', {
-            size: EDGE_CHUNKING_MAX_TOKENS.MAX[embeddingsModel],
+            size: EDGE_FIXED_CHUNK_PARAMS.maxTokens.MAX[embeddingsModel],
           })
         );
         return false;
       }
 
-      if (chunkingOverlapPercentage < EDGE_CHUNKING_OVERLAP_PERCENTAGE.MIN) {
+      if (
+        fixedSizeParams.overlapPercentage <
+        EDGE_FIXED_CHUNK_PARAMS.overlapPercentage.MIN
+      ) {
         setErrorMessages(
-          'chunkingOverlapPercentage',
+          'fixedSizeParams.overlapPercentage',
           t('validation.minRange.message', {
-            size: EDGE_CHUNKING_OVERLAP_PERCENTAGE.MIN,
+            size: EDGE_FIXED_CHUNK_PARAMS.overlapPercentage.MIN,
           })
         );
         return false;
       } else if (
-        chunkingOverlapPercentage > EDGE_CHUNKING_OVERLAP_PERCENTAGE.MAX
+        fixedSizeParams.overlapPercentage >
+        EDGE_FIXED_CHUNK_PARAMS.overlapPercentage.MAX
       ) {
         setErrorMessages(
-          'chunkingOverlapPercentage',
+          'fixedSizeParams.overlapPercentage',
           t('validation.maxRange.message', {
-            size: EDGE_CHUNKING_OVERLAP_PERCENTAGE.MAX,
+            size: EDGE_FIXED_CHUNK_PARAMS.overlapPercentage.MAX,
+          })
+        );
+        return false;
+      }
+    } else if (chunkingStrategy === 'hierarchical') {
+      if (
+        hierarchicalParams.overlapTokens <
+        EDGE_HIERARCHICAL_CHUNK_PARAMS.overlapTokens.MIN
+      ) {
+        setErrorMessages(
+          'hierarchicalParams.overlapTokens',
+          t('validation.minRange.message', {
+            size: EDGE_HIERARCHICAL_CHUNK_PARAMS.overlapTokens.MIN,
+          })
+        );
+        return false;
+      }
+
+      if (
+        hierarchicalParams.maxParentTokenSize <
+        EDGE_HIERARCHICAL_CHUNK_PARAMS.maxParentTokenSize.MIN
+      ) {
+        setErrorMessages(
+          'hierarchicalParams.maxParentTokenSize',
+          t('validation.minRange.message', {
+            size: EDGE_HIERARCHICAL_CHUNK_PARAMS.maxParentTokenSize.MIN,
+          })
+        );
+        return false;
+      } else if (
+        hierarchicalParams.maxParentTokenSize >
+        EDGE_HIERARCHICAL_CHUNK_PARAMS.maxParentTokenSize.MAX[embeddingsModel]
+      ) {
+        setErrorMessages(
+          'hierarchicalParams.maxParentTokenSize',
+          t('validation.maxRange.message', {
+            size: EDGE_HIERARCHICAL_CHUNK_PARAMS.maxParentTokenSize.MAX[
+              embeddingsModel
+            ],
+          })
+        );
+        return false;
+      }
+
+      if (
+        hierarchicalParams.maxChildTokenSize <
+        EDGE_HIERARCHICAL_CHUNK_PARAMS.maxChildTokenSize.MIN
+      ) {
+        setErrorMessages(
+          'hierarchicalParams.maxChildTokenSize',
+          t('validation.minRange.message', {
+            size: EDGE_HIERARCHICAL_CHUNK_PARAMS.maxChildTokenSize.MIN,
+          })
+        );
+        return false;
+      } else if (
+        hierarchicalParams.maxChildTokenSize >
+        EDGE_HIERARCHICAL_CHUNK_PARAMS.maxChildTokenSize.MAX[embeddingsModel]
+      ) {
+        setErrorMessages(
+          'hierarchicalParams.maxChildTokenSize',
+          t('validation.maxRange.message', {
+            size: EDGE_HIERARCHICAL_CHUNK_PARAMS.maxChildTokenSize.MAX[
+              embeddingsModel
+            ],
+          })
+        );
+        return false;
+      }
+
+      if (
+        hierarchicalParams.maxParentTokenSize <
+        hierarchicalParams.maxChildTokenSize
+      ) {
+        setErrorMessages(
+          'hierarchicalParams.maxParentTokenSize',
+          t('validation.parentTokenRange.message')
+        );
+        return false;
+      }
+    } else if (chunkingStrategy === 'semantic') {
+      if (semanticParams.maxTokens < EDGE_SEMANTIC_CHUNK_PARAMS.maxTokens.MIN) {
+        setErrorMessages(
+          'semanticParams.maxTokenss',
+          t('validation.minRange.message', {
+            size: EDGE_SEMANTIC_CHUNK_PARAMS.maxTokens.MIN,
+          })
+        );
+        return false;
+      } else if (
+        semanticParams.maxTokens >
+        EDGE_SEMANTIC_CHUNK_PARAMS.maxTokens.MAX[embeddingsModel]
+      ) {
+        setErrorMessages(
+          'semanticParams.maxTokens',
+          t('validation.maxRange.message', {
+            size: EDGE_SEMANTIC_CHUNK_PARAMS.maxTokens.MAX[embeddingsModel],
+          })
+        );
+        return false;
+      }
+
+      if (
+        semanticParams.bufferSize < EDGE_SEMANTIC_CHUNK_PARAMS.bufferSize.MIN
+      ) {
+        setErrorMessages(
+          'semanticParams.bufferSize',
+          t('validation.minRange.message', {
+            size: EDGE_SEMANTIC_CHUNK_PARAMS.bufferSize.MIN,
+          })
+        );
+        return false;
+      } else if (
+        semanticParams.bufferSize > EDGE_SEMANTIC_CHUNK_PARAMS.bufferSize.MAX
+      ) {
+        setErrorMessages(
+          'semanticParams.bufferSize',
+          t('validation.maxRange.message', {
+            size: EDGE_SEMANTIC_CHUNK_PARAMS.bufferSize.MAX,
+          })
+        );
+        return false;
+      }
+
+      if (
+        semanticParams.breakpointPercentileThreshold <
+        EDGE_SEMANTIC_CHUNK_PARAMS.breakpointPercentileThreshold.MIN
+      ) {
+        setErrorMessages(
+          'semanticParams.breakpointPercentileThreshold',
+          t('validation.minRange.message', {
+            size: EDGE_SEMANTIC_CHUNK_PARAMS.breakpointPercentileThreshold.MIN,
+          })
+        );
+        return false;
+      } else if (
+        semanticParams.breakpointPercentileThreshold >
+        EDGE_SEMANTIC_CHUNK_PARAMS.breakpointPercentileThreshold.MAX
+      ) {
+        setErrorMessages(
+          'semanticParams.breakpointPercentileThreshold',
+          t('validation.maxRange.message', {
+            size: EDGE_SEMANTIC_CHUNK_PARAMS.breakpointPercentileThreshold.MAX,
           })
         );
         return false;
@@ -671,8 +1113,9 @@ const BotKbEditPage: React.FC = () => {
     setErrorMessages,
     embeddingsModel,
     chunkingStrategy,
-    chunkingMaxTokens,
-    chunkingOverlapPercentage,
+    fixedSizeParams,
+    hierarchicalParams,
+    semanticParams,
     t,
   ]);
 
@@ -710,12 +1153,25 @@ const BotKbEditPage: React.FC = () => {
       bedrockKnowledgeBase: {
         knowledgeBaseId,
         embeddingsModel,
-        chunkingStrategy,
-        maxTokens: chunkingStrategy == 'fixed_size' ? chunkingMaxTokens : null,
-        overlapPercentage:
-          chunkingStrategy == 'fixed_size' ? chunkingOverlapPercentage : null,
+        chunkingConfiguration: (() => {
+          switch (chunkingStrategy) {
+            case 'default':
+              return { chunkingStrategy: 'default' };
+            case 'fixed_size':
+              return fixedSizeParams;
+            case 'hierarchical':
+              return hierarchicalParams;
+            case 'semantic':
+              return semanticParams;
+            default:
+              return { chunkingStrategy: 'none' };
+          }
+        })(),
         openSearch: openSearchParams,
         searchParams: searchParams,
+        parsingModel,
+        webCrawlingScope,
+        webCrawlingFilters,
       },
       bedrockGuardrails: {
         isGuardrailEnabled:
@@ -736,6 +1192,7 @@ const BotKbEditPage: React.FC = () => {
         guardrailArn: '',
         guardrailVersion: '',
       },
+      activeModels,
     })
       .then(() => {
         navigate('/bot/explore');
@@ -766,8 +1223,9 @@ const BotKbEditPage: React.FC = () => {
     knowledgeBaseId,
     embeddingsModel,
     chunkingStrategy,
-    chunkingMaxTokens,
-    chunkingOverlapPercentage,
+    fixedSizeParams,
+    hierarchicalParams,
+    semanticParams,
     openSearchParams,
     hateThreshold,
     insultsThreshold,
@@ -776,6 +1234,10 @@ const BotKbEditPage: React.FC = () => {
     misconductThreshold,
     groundingThreshold,
     relevanceThreshold,
+    parsingModel,
+    webCrawlingScope,
+    webCrawlingFilters,
+    activeModels,
   ]);
 
   const onClickEdit = useCallback(() => {
@@ -814,13 +1276,25 @@ const BotKbEditPage: React.FC = () => {
         bedrockKnowledgeBase: {
           knowledgeBaseId,
           embeddingsModel,
-          chunkingStrategy,
-          maxTokens:
-            chunkingStrategy == 'fixed_size' ? chunkingMaxTokens : null,
-          overlapPercentage:
-            chunkingStrategy == 'fixed_size' ? chunkingOverlapPercentage : null,
+          chunkingConfiguration: (() => {
+            switch (chunkingStrategy) {
+              case 'default':
+                return { chunkingStrategy: 'default' };
+              case 'fixed_size':
+                return fixedSizeParams;
+              case 'hierarchical':
+                return hierarchicalParams;
+              case 'semantic':
+                return semanticParams;
+              default:
+                return { chunkingStrategy: 'none' };
+            }
+          })(),
           openSearch: openSearchParams,
           searchParams: searchParams,
+          parsingModel,
+          webCrawlingScope,
+          webCrawlingFilters,
         },
         bedrockGuardrails: {
           isGuardrailEnabled:
@@ -841,6 +1315,7 @@ const BotKbEditPage: React.FC = () => {
           guardrailArn: guardrailArn,
           guardrailVersion: guardrailVersion,
         },
+        activeModels,
       })
         .then(() => {
           navigate('/bot/explore');
@@ -875,8 +1350,9 @@ const BotKbEditPage: React.FC = () => {
     knowledgeBaseId,
     embeddingsModel,
     chunkingStrategy,
-    chunkingMaxTokens,
-    chunkingOverlapPercentage,
+    fixedSizeParams,
+    hierarchicalParams,
+    semanticParams,
     openSearchParams,
     hateThreshold,
     insultsThreshold,
@@ -887,6 +1363,10 @@ const BotKbEditPage: React.FC = () => {
     relevanceThreshold,
     guardrailArn,
     guardrailVersion,
+    parsingModel,
+    webCrawlingScope,
+    webCrawlingFilters,
+    activeModels,
   ]);
 
   const [isOpenSamples, setIsOpenSamples] = useState(false);
@@ -1039,6 +1519,169 @@ const BotKbEditPage: React.FC = () => {
                 </div>
 
                 <div className="mt-4">
+                  <div className="font-semibold">{t('bot.label.url')}</div>
+                  <div className="text-sm text-aws-font-color/50">
+                    {t('bot.help.knowledge.url')}
+                  </div>
+                  <div className="mt-2 flex w-full flex-col gap-1">
+                    {urls.map((url, idx) => (
+                      <div className="flex w-full gap-2" key={idx}>
+                        <InputText
+                          className="w-full"
+                          type="text"
+                          disabled={isLoading}
+                          value={url}
+                          placeholder="https://example.com"
+                          onChange={(s) => {
+                            onChangeUrls(s, idx);
+                          }}
+                          errorMessage={errorMessages[`urls-${idx}`]}
+                        />
+                        <ButtonIcon
+                          className="text-red"
+                          disabled={(urls.length === 1 && !url[0]) || isLoading}
+                          onClick={() => {
+                            onClickRemoveUrls(idx);
+                          }}>
+                          <PiTrash />
+                        </ButtonIcon>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-2">
+                    <Button
+                      outlined
+                      icon={<PiPlus />}
+                      disabled={urls.length >= 10}
+                      onClick={onClickAddUrls}>
+                      {t('button.add')}
+                    </Button>
+                  </div>
+
+                  <ExpandableDrawerGroup
+                    isDefaultShow={false}
+                    label={t('knowledgeBaseSettings.webCrawlerConfig.title')}
+                    className="py-2">
+                    <div className="mt-3">
+                      <Select
+                        label={t(
+                          'knowledgeBaseSettings.webCrawlerConfig.crawlingScope.label'
+                        )}
+                        value={webCrawlingScope}
+                        options={webCrawlingScopeOptions}
+                        onChange={(val) => {
+                          setWebCrawlingScope(val as WebCrawlingScope);
+                        }}
+                      />
+                    </div>
+
+                    <div className="mt-4">
+                      <div className="font-semibold">
+                        {t(
+                          'knowledgeBaseSettings.webCrawlerConfig.includePatterns.label'
+                        )}
+                      </div>
+                      <div className="text-sm text-aws-font-color/50">
+                        {t(
+                          'knowledgeBaseSettings.webCrawlerConfig.includePatterns.hint'
+                        )}
+                      </div>
+                      <div className="mt-2 flex w-full flex-col gap-1">
+                        {webCrawlingFilters.includePatterns.map(
+                          (pattern, idx) => (
+                            <div className="flex w-full gap-2" key={idx}>
+                              <InputText
+                                className="w-full"
+                                type="text"
+                                disabled={isLoading}
+                                value={pattern}
+                                placeholder=".*\.html$"
+                                onChange={(s) => {
+                                  onChangeIncludePattern(s, idx);
+                                }}
+                              />
+                              <ButtonIcon
+                                className="text-red"
+                                disabled={
+                                  (webCrawlingFilters.includePatterns.length ===
+                                    1 &&
+                                    !pattern) ||
+                                  isLoading
+                                }
+                                onClick={() => {
+                                  onClickRemoveIncludePattern(idx);
+                                }}>
+                                <PiTrash />
+                              </ButtonIcon>
+                            </div>
+                          )
+                        )}
+                      </div>
+                      <div className="mt-2">
+                        <Button
+                          outlined
+                          icon={<PiPlus />}
+                          onClick={onClickAddIncludePattern}>
+                          {t('button.add')}
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="mt-4">
+                      <div className="font-semibold">
+                        {t(
+                          'knowledgeBaseSettings.webCrawlerConfig.excludePatterns.label'
+                        )}
+                      </div>
+                      <div className="text-sm text-aws-font-color/50">
+                        {t(
+                          'knowledgeBaseSettings.webCrawlerConfig.excludePatterns.hint'
+                        )}
+                      </div>
+                      <div className="mt-2 flex w-full flex-col gap-1">
+                        {webCrawlingFilters.excludePatterns.map(
+                          (pattern, idx) => (
+                            <div className="flex w-full gap-2" key={idx}>
+                              <InputText
+                                className="w-full"
+                                type="text"
+                                disabled={isLoading}
+                                value={pattern}
+                                placeholder=".*\.pdf$"
+                                onChange={(s) => {
+                                  onChangeExcludePattern(s, idx);
+                                }}
+                              />
+                              <ButtonIcon
+                                className="text-red"
+                                disabled={
+                                  (webCrawlingFilters.excludePatterns.length ===
+                                    1 &&
+                                    !pattern) ||
+                                  isLoading
+                                }
+                                onClick={() => {
+                                  onClickRemoveExcludePattern(idx);
+                                }}>
+                                <PiTrash />
+                              </ButtonIcon>
+                            </div>
+                          )
+                        )}
+                      </div>
+                      <div className="mt-2">
+                        <Button
+                          outlined
+                          icon={<PiPlus />}
+                          onClick={onClickAddExcludePattern}>
+                          {t('button.add')}
+                        </Button>
+                      </div>
+                    </div>
+                  </ExpandableDrawerGroup>
+                </div>
+
+                <div className="mt-4">
                   <div className="font-semibold">
                     {t('bot.label.citeRetrievedContexts')}
                   </div>
@@ -1182,6 +1825,21 @@ const BotKbEditPage: React.FC = () => {
 
                 <div className="mt-3">
                   <Select
+                    label={t('knowledgeBaseSettings.advancedParsing.label')}
+                    value={parsingModel || 'disabled'}
+                    options={parsingModelOptions}
+                    onChange={(val) => {
+                      setParsingModel(val as ParsingModel);
+                    }}
+                    disabled={!isNewBot}
+                  />
+                  <div className="text-sm text-aws-font-color/50">
+                    {t('knowledgeBaseSettings.advancedParsing.hint')}
+                  </div>
+                </div>
+
+                <div className="mt-3">
+                  <Select
                     label={t('knowledgeBaseSettings.chunkingStrategy.label')}
                     value={chunkingStrategy}
                     options={chunkingStrategyOptions}
@@ -1195,7 +1853,7 @@ const BotKbEditPage: React.FC = () => {
                   <>
                     <div className="mx-4 mt-2">
                       <Slider
-                        value={chunkingMaxTokens}
+                        value={fixedSizeParams.maxTokens}
                         hint={t('knowledgeBaseSettings.chunkingMaxTokens.hint')}
                         label={
                           <div className="flex items-center gap-1">
@@ -1207,18 +1865,27 @@ const BotKbEditPage: React.FC = () => {
                           </div>
                         }
                         range={{
-                          min: EDGE_CHUNKING_MAX_TOKENS.MIN,
-                          max: EDGE_CHUNKING_MAX_TOKENS.MAX[embeddingsModel],
-                          step: EDGE_CHUNKING_MAX_TOKENS.STEP,
+                          min: EDGE_FIXED_CHUNK_PARAMS.maxTokens.MIN,
+                          max: EDGE_FIXED_CHUNK_PARAMS.maxTokens.MAX[
+                            embeddingsModel
+                          ],
+                          step: EDGE_FIXED_CHUNK_PARAMS.maxTokens.STEP,
                         }}
-                        onChange={setChunkingMaxTokens}
+                        onChange={(value) =>
+                          setFixedSizeParams((params) => ({
+                            ...params,
+                            maxTokens: value,
+                          }))
+                        }
                         disabled={!isNewBot}
-                        errorMessage={errorMessages['chunkingMaxTokens']}
+                        errorMessage={
+                          errorMessages['fixedSizeParams.maxTokens']
+                        }
                       />
                     </div>
                     <div className="mx-4 mt-2">
                       <Slider
-                        value={chunkingOverlapPercentage}
+                        value={fixedSizeParams.overlapPercentage}
                         hint={t(
                           'knowledgeBaseSettings.chunkingOverlapPercentage.hint'
                         )}
@@ -1234,16 +1901,236 @@ const BotKbEditPage: React.FC = () => {
                           </div>
                         }
                         range={{
-                          min: EDGE_CHUNKING_OVERLAP_PERCENTAGE.MIN,
-                          max: EDGE_CHUNKING_OVERLAP_PERCENTAGE.MAX,
-                          step: EDGE_CHUNKING_OVERLAP_PERCENTAGE.STEP,
+                          min: EDGE_FIXED_CHUNK_PARAMS.overlapPercentage.MIN,
+                          max: EDGE_FIXED_CHUNK_PARAMS.overlapPercentage.MAX,
+                          step: EDGE_FIXED_CHUNK_PARAMS.overlapPercentage.STEP,
                         }}
                         onChange={(percentage) =>
-                          setChunkingOverlapPercentage(percentage)
+                          setFixedSizeParams((params) => ({
+                            ...params,
+                            overlapPercentage: percentage,
+                          }))
                         }
                         disabled={!isNewBot}
                         errorMessage={
-                          errorMessages['chunkingOverlapPercentage']
+                          errorMessages['fixedSizeParams.overlapPercentage']
+                        }
+                      />
+                    </div>
+                  </>
+                )}
+                {chunkingStrategy === 'hierarchical' && (
+                  <>
+                    <div className="mx-4 mt-2">
+                      <Slider
+                        value={hierarchicalParams.overlapTokens}
+                        hint={t('knowledgeBaseSettings.overlapTokens.hint')}
+                        label={
+                          <div className="flex items-center gap-1">
+                            {t('knowledgeBaseSettings.overlapTokens.label')}
+                            <Help
+                              direction={TooltipDirection.RIGHT}
+                              message={t(
+                                'embeddingSettings.help.overlapTokens'
+                              )}
+                            />
+                          </div>
+                        }
+                        range={{
+                          min: EDGE_HIERARCHICAL_CHUNK_PARAMS.overlapTokens.MIN,
+                          max: EDGE_HIERARCHICAL_CHUNK_PARAMS.maxParentTokenSize
+                            .MAX[embeddingsModel],
+                          step: EDGE_HIERARCHICAL_CHUNK_PARAMS.overlapTokens
+                            .STEP,
+                        }}
+                        onChange={(value) =>
+                          setHierarchicalParams((params) => ({
+                            ...params,
+                            overlapTokens: value,
+                          }))
+                        }
+                        disabled={!isNewBot}
+                        errorMessage={
+                          errorMessages['hierarchicalParams.overlapTokens']
+                        }
+                      />
+                    </div>
+                    <div className="mx-4 mt-2">
+                      <Slider
+                        value={hierarchicalParams.maxParentTokenSize}
+                        hint={t(
+                          'knowledgeBaseSettings.maxParentTokenSize.hint'
+                        )}
+                        label={
+                          <div className="flex items-center gap-1">
+                            {t(
+                              'knowledgeBaseSettings.maxParentTokenSize.label'
+                            )}
+                            <Help
+                              direction={TooltipDirection.RIGHT}
+                              message={t(
+                                'embeddingSettings.help.maxParentTokenSize'
+                              )}
+                            />
+                          </div>
+                        }
+                        range={{
+                          min: EDGE_HIERARCHICAL_CHUNK_PARAMS.maxParentTokenSize
+                            .MIN,
+                          max: EDGE_HIERARCHICAL_CHUNK_PARAMS.maxParentTokenSize
+                            .MAX[embeddingsModel],
+                          step: EDGE_HIERARCHICAL_CHUNK_PARAMS
+                            .maxParentTokenSize.STEP,
+                        }}
+                        onChange={(value) =>
+                          setHierarchicalParams((params) => ({
+                            ...params,
+                            maxParentTokenSize: value,
+                          }))
+                        }
+                        disabled={!isNewBot}
+                        errorMessage={
+                          errorMessages['hierarchicalParams.maxParentTokenSize']
+                        }
+                      />
+                    </div>
+                    <div className="mx-4 mt-2">
+                      <Slider
+                        value={hierarchicalParams.maxChildTokenSize}
+                        hint={t('knowledgeBaseSettings.maxChildTokenSize.hint')}
+                        label={
+                          <div className="flex items-center gap-1">
+                            {t('knowledgeBaseSettings.maxChildTokenSize.label')}
+                            <Help
+                              direction={TooltipDirection.RIGHT}
+                              message={t(
+                                'embeddingSettings.help.maxChildTokenSize'
+                              )}
+                            />
+                          </div>
+                        }
+                        range={{
+                          min: EDGE_HIERARCHICAL_CHUNK_PARAMS.maxChildTokenSize
+                            .MIN,
+                          max: EDGE_HIERARCHICAL_CHUNK_PARAMS.maxChildTokenSize
+                            .MAX[embeddingsModel],
+                          step: EDGE_HIERARCHICAL_CHUNK_PARAMS.maxChildTokenSize
+                            .STEP,
+                        }}
+                        onChange={(value) =>
+                          setHierarchicalParams((params) => ({
+                            ...params,
+                            maxChildTokenSize: value,
+                          }))
+                        }
+                        disabled={!isNewBot}
+                        errorMessage={
+                          errorMessages['hierarchicalParams.maxChildTokenSize']
+                        }
+                      />
+                    </div>
+                  </>
+                )}
+                {chunkingStrategy === 'semantic' && (
+                  <>
+                    <div className="mx-4 mt-2">
+                      <Slider
+                        value={semanticParams.maxTokens}
+                        hint={t('knowledgeBaseSettings.chunkingMaxTokens.hint')}
+                        label={
+                          <div className="flex items-center gap-1">
+                            {t('knowledgeBaseSettings.chunkingMaxTokens.label')}
+                            <Help
+                              direction={TooltipDirection.RIGHT}
+                              message={t('embeddingSettings.help.chunkSize')}
+                            />
+                          </div>
+                        }
+                        range={{
+                          min: EDGE_SEMANTIC_CHUNK_PARAMS.maxTokens.MIN,
+                          max: EDGE_SEMANTIC_CHUNK_PARAMS.maxTokens.MAX[
+                            embeddingsModel
+                          ],
+                          step: EDGE_SEMANTIC_CHUNK_PARAMS.maxTokens.STEP,
+                        }}
+                        onChange={(value) =>
+                          setSemanticParams((params) => ({
+                            ...params,
+                            maxTokens: value,
+                          }))
+                        }
+                        disabled={!isNewBot}
+                        errorMessage={errorMessages['semanticParams.maxTokens']}
+                      />
+                    </div>
+                    <div className="mx-4 mt-2">
+                      <Slider
+                        value={semanticParams.bufferSize}
+                        hint={t('knowledgeBaseSettings.bufferSize.hint')}
+                        label={
+                          <div className="flex items-center gap-1">
+                            {t('knowledgeBaseSettings.bufferSize.label')}
+                            <Help
+                              direction={TooltipDirection.RIGHT}
+                              message={t('embeddingSettings.help.bufferSize')}
+                            />
+                          </div>
+                        }
+                        range={{
+                          min: EDGE_SEMANTIC_CHUNK_PARAMS.bufferSize.MIN,
+                          max: EDGE_SEMANTIC_CHUNK_PARAMS.bufferSize.MAX,
+                          step: EDGE_SEMANTIC_CHUNK_PARAMS.bufferSize.STEP,
+                        }}
+                        onChange={(value) =>
+                          setSemanticParams((params) => ({
+                            ...params,
+                            bufferSize: value,
+                          }))
+                        }
+                        disabled={!isNewBot}
+                        errorMessage={
+                          errorMessages['semanticParams.bufferSize']
+                        }
+                      />
+                    </div>
+                    <div className="mx-4 mt-2">
+                      <Slider
+                        value={semanticParams.breakpointPercentileThreshold}
+                        hint={t(
+                          'knowledgeBaseSettings.breakpointPercentileThreshold.hint'
+                        )}
+                        label={
+                          <div className="flex items-center gap-1">
+                            {t(
+                              'knowledgeBaseSettings.breakpointPercentileThreshold.label'
+                            )}
+                            <Help
+                              direction={TooltipDirection.RIGHT}
+                              message={t(
+                                'embeddingSettings.help.breakpointPercentileThreshold'
+                              )}
+                            />
+                          </div>
+                        }
+                        range={{
+                          min: EDGE_SEMANTIC_CHUNK_PARAMS
+                            .breakpointPercentileThreshold.MIN,
+                          max: EDGE_SEMANTIC_CHUNK_PARAMS
+                            .breakpointPercentileThreshold.MAX,
+                          step: EDGE_SEMANTIC_CHUNK_PARAMS
+                            .breakpointPercentileThreshold.STEP,
+                        }}
+                        onChange={(percentage) =>
+                          setSemanticParams((params) => ({
+                            ...params,
+                            breakpointPercentileThreshold: percentage,
+                          }))
+                        }
+                        disabled={!isNewBot}
+                        errorMessage={
+                          errorMessages[
+                            'semanticParams.breakpointPercentileThreshold'
+                          ]
                         }
                       />
                     </div>
@@ -1498,6 +2385,36 @@ const BotKbEditPage: React.FC = () => {
                     enableDecimal={true}
                     errorMessage={errorMessages['relevanceThreshold']}
                   />
+                </div>
+              </ExpandableDrawerGroup>
+
+              <ExpandableDrawerGroup
+                isDefaultShow={false}
+                label={t('bot.activeModels.title')}
+                className="py-2">
+                <div className="text-sm text-aws-font-color/50">
+                  {t('bot.activeModels.description')}
+                </div>
+
+                <div className="mt-4">
+                  <div className="mt-2 space-y-2">
+                    {activeModelsOptions.map(({ key, label, description }) => (
+                      <div key={key} className="flex items-start">
+                        <Toggle
+                          value={
+                            activeModels[
+                              toCamelCase(key) as keyof ActiveModels
+                            ] ?? true
+                          }
+                          onChange={(value) => onChangeActiveModels(key, value)}
+                        />
+                        <div>
+                          <div>{label}</div>
+                          <div className="text-sm text-dark-gray">{description}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </ExpandableDrawerGroup>
 

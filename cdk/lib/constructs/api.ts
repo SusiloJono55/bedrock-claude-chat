@@ -1,12 +1,14 @@
 import { Construct } from "constructs";
-import { CfnOutput, Duration } from "aws-cdk-lib";
+import { CfnOutput, CfnResource, Duration } from "aws-cdk-lib";
 import { ITable } from "aws-cdk-lib/aws-dynamodb";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import { HttpUserPoolAuthorizer } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import {
-  DockerImageCode,
-  DockerImageFunction,
+  Architecture,
   IFunction,
+  LayerVersion,
+  Runtime,
+  SnapStartConf,
 } from "aws-cdk-lib/aws-lambda";
 import {
   CorsHttpMethod,
@@ -14,15 +16,15 @@ import {
   HttpMethod,
 } from "aws-cdk-lib/aws-apigatewayv2";
 import { Auth } from "./auth";
-import { Platform } from "aws-cdk-lib/aws-ecr-assets";
 import { Stack } from "aws-cdk-lib";
 import * as iam from "aws-cdk-lib/aws-iam";
-import * as ec2 from "aws-cdk-lib/aws-ec2";
+import * as logs from "aws-cdk-lib/aws-logs";
 import * as path from "path";
 import { IBucket } from "aws-cdk-lib/aws-s3";
 import * as codebuild from "aws-cdk-lib/aws-codebuild";
 import { UsageAnalysis } from "./usage-analysis";
 import { excludeDockerImage } from "../constants/docker";
+import { PythonFunction } from "@aws-cdk/aws-lambda-python-alpha";
 
 export interface ApiProps {
   readonly database: ITable;
@@ -36,6 +38,7 @@ export interface ApiProps {
   readonly bedrockCustomBotProject: codebuild.IProject;
   readonly usageAnalysis?: UsageAnalysis;
   readonly enableMistral: boolean;
+  readonly enableLambdaSnapStart: boolean;
 }
 
 export class Api extends Construct {
@@ -171,15 +174,15 @@ export class Api extends Construct {
     props.usageAnalysis?.ddbBucket.grantRead(handlerRole);
     props.largeMessageBucket.grantReadWrite(handlerRole);
 
-    const handler = new DockerImageFunction(this, "Handler", {
-      code: DockerImageCode.fromImageAsset(
-        path.join(__dirname, "../../../backend"),
-        {
-          platform: Platform.LINUX_AMD64,
-          file: "Dockerfile",
-          exclude: [...excludeDockerImage],
-        }
-      ),
+    const handler = new PythonFunction(this, "HandlerV2", {
+      entry: path.join(__dirname, "../../../backend"),
+      index: "app/main.py",
+      bundling: {
+        assetExcludes: [...excludeDockerImage],
+        buildArgs: { POETRY_VERSION: "1.8.3" },
+      },
+      runtime: Runtime.PYTHON_3_12,
+      architecture: Architecture.X86_64,
       memorySize: 1024,
       timeout: Duration.minutes(15),
       environment: {
@@ -203,11 +206,31 @@ export class Api extends Construct {
         USAGE_ANALYSIS_WORKGROUP: props.usageAnalysis?.workgroupName || "",
         USAGE_ANALYSIS_OUTPUT_LOCATION: usageAnalysisOutputLocation,
         ENABLE_MISTRAL: props.enableMistral.toString(),
+        AWS_LAMBDA_EXEC_WRAPPER: "/opt/bootstrap",
+        PORT: "8000",
       },
       role: handlerRole,
+      logRetention: logs.RetentionDays.THREE_MONTHS,
+      snapStart: props.enableLambdaSnapStart ? SnapStartConf.ON_PUBLISHED_VERSIONS : undefined,
+      layers: [
+        LayerVersion.fromLayerVersionArn(
+          this,
+          "LwaLayer",
+          // https://github.com/awslabs/aws-lambda-web-adapter?tab=readme-ov-file#lambda-functions-packaged-as-zip-package-for-aws-managed-runtimes
+          `arn:aws:lambda:${
+            Stack.of(this).region
+          }:753240598075:layer:LambdaAdapterLayerX86:23`
+        ),
+      ],
     });
+    // https://github.com/awslabs/aws-lambda-web-adapter/tree/main/examples/fastapi-zip
+    (handler.node.defaultChild as CfnResource).addPropertyOverride(
+      "Handler",
+      "run.sh"
+    );
 
     const api = new HttpApi(this, "Default", {
+      description: `Main API for ${Stack.of(this).stackName}`,
       corsPreflight: {
         allowHeaders: ["*"],
         allowMethods: [
@@ -224,7 +247,10 @@ export class Api extends Construct {
       },
     });
 
-    const integration = new HttpLambdaIntegration("Integration", handler);
+    const integration = new HttpLambdaIntegration(
+      "Integration",
+      handler.currentVersion
+    );
     const authorizer = new HttpUserPoolAuthorizer(
       "Authorizer",
       props.auth.userPool,
