@@ -6,8 +6,8 @@ const translation = {
       },
     },
     app: {
-      name: 'Bedrock Claude Chat',
-      nameWithoutClaude: 'Bedrock Chat',
+      name: 'Paques Chatbot',
+      nameWithoutClaude: 'Paques Chatbot',
       inputMessage: 'ฉันช่วยอะไรคุณได้บ้าง?',
       starredBots: 'บ็อตที่ถูกใจ',
       recentlyUsedBots: 'บ็อตที่ใช้งานล่าสุด',
